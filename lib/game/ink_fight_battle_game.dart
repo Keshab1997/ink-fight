@@ -74,6 +74,10 @@ class InkFightBattleGame extends FlameGame {
       anchor: Anchor.bottomCenter,
     );
 
+    // Frames are drawn facing right; the rival stands on the right, so
+    // mirror him to face the player.
+    _rival!.scale.x = -1;
+
     add(_rival!);
     add(_player!);
     _loaded = true;
@@ -108,7 +112,9 @@ class InkFightBattleGame extends FlameGame {
 
     final fighterSize = math.min(viewportSize.y * .74, viewportSize.x * .31);
     final sizeVector = Vector2.all(fighterSize);
-    final baseline = viewportSize.y * .80;
+    // The runtime frames carry ~12% transparent padding under the feet, so
+    // sink the anchor by that share to put the soles on the arena floor.
+    final baseline = viewportSize.y * .80 + fighterSize * .121;
 
     _player!
       ..size = sizeVector

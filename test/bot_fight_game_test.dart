@@ -35,9 +35,15 @@ void main() {
     expect(player.animation, isNotNull);
     expect(rival.animation, isNotNull);
 
-    // Player stands left of the rival on the 960x540 arena floor.
+    // Rival is mirrored to face the player, who stands on the left.
+    expect(rival.scale.x, -1);
+    expect(player.scale.x, 1);
     expect(player.position.x, lessThan(rival.position.x));
-    expect(player.position.y, closeTo(540 * .80, 1));
+
+    // Soles (frame content ends ~12% above the anchored image bottom) rest
+    // on the arena floor line at 80% of the viewport height.
+    expect(player.position.y - player.size.y * .121, closeTo(540 * .80, 1));
+    expect(rival.position.y - rival.size.y * .121, closeTo(540 * .80, 1));
     expect(player.size.x, greaterThan(0));
   });
 
