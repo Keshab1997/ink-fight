@@ -2,24 +2,104 @@
   "canvas": 1024,
   "baseline_y": 900,
   "background": "transparent_rgba",
-  "status": "sample_runtime_frames",
+  "status": "mvp_frame_batch_2",
   "characters": {
-    "player_ink_fighter": {
-      "source_archive": "assets/characters/originals/player_ink_fighter",
-      "frames": [
-        "player_ink_fighter_idle_000.png",
-        "player_ink_fighter_light_punch_002.png",
-        "player_ink_fighter_heavy_kick_003.png"
-      ]
-    },
     "bot_crimson_rival": {
       "source_archive": "assets/characters/originals/bot_crimson_rival",
+      "frame_count": 7,
       "frames": [
-        "bot_crimson_rival_idle_000.png",
-        "bot_crimson_rival_light_punch_002.png",
-        "bot_crimson_rival_heavy_kick_003.png"
+        {
+          "file": "bot_crimson_rival_heavy_kick_003.png",
+          "animation": "heavy_kick",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/heavy_kick/bot_crimson_rival_heavy_kick_003.png"
+        },
+        {
+          "file": "bot_crimson_rival_hurt_001.png",
+          "animation": "hurt",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/hurt/bot_crimson_rival_hurt_001.png"
+        },
+        {
+          "file": "bot_crimson_rival_idle_000.png",
+          "animation": "idle",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_000.png"
+        },
+        {
+          "file": "bot_crimson_rival_jump_002.png",
+          "animation": "jump",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/jump/bot_crimson_rival_jump_002.png"
+        },
+        {
+          "file": "bot_crimson_rival_light_punch_002.png",
+          "animation": "light_punch",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/light_punch/bot_crimson_rival_light_punch_002.png"
+        },
+        {
+          "file": "bot_crimson_rival_victory_002.png",
+          "animation": "victory",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/victory/bot_crimson_rival_victory_002.png"
+        },
+        {
+          "file": "bot_crimson_rival_walk_000.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/walk/bot_crimson_rival_walk_000.png"
+        }
+      ]
+    },
+    "player_ink_fighter": {
+      "source_archive": "assets/characters/originals/player_ink_fighter",
+      "frame_count": 9,
+      "frames": [
+        {
+          "file": "player_ink_fighter_block_001.png",
+          "animation": "block",
+          "runtime": "assets/characters/runtime/player_ink_fighter/block/player_ink_fighter_block_001.png"
+        },
+        {
+          "file": "player_ink_fighter_defeat_002.png",
+          "animation": "defeat",
+          "runtime": "assets/characters/runtime/player_ink_fighter/defeat/player_ink_fighter_defeat_002.png"
+        },
+        {
+          "file": "player_ink_fighter_heavy_kick_003.png",
+          "animation": "heavy_kick",
+          "runtime": "assets/characters/runtime/player_ink_fighter/heavy_kick/player_ink_fighter_heavy_kick_003.png"
+        },
+        {
+          "file": "player_ink_fighter_hurt_001.png",
+          "animation": "hurt",
+          "runtime": "assets/characters/runtime/player_ink_fighter/hurt/player_ink_fighter_hurt_001.png"
+        },
+        {
+          "file": "player_ink_fighter_idle_000.png",
+          "animation": "idle",
+          "runtime": "assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_000.png"
+        },
+        {
+          "file": "player_ink_fighter_jump_002.png",
+          "animation": "jump",
+          "runtime": "assets/characters/runtime/player_ink_fighter/jump/player_ink_fighter_jump_002.png"
+        },
+        {
+          "file": "player_ink_fighter_light_punch_002.png",
+          "animation": "light_punch",
+          "runtime": "assets/characters/runtime/player_ink_fighter/light_punch/player_ink_fighter_light_punch_002.png"
+        },
+        {
+          "file": "player_ink_fighter_victory_002.png",
+          "animation": "victory",
+          "runtime": "assets/characters/runtime/player_ink_fighter/victory/player_ink_fighter_victory_002.png"
+        },
+        {
+          "file": "player_ink_fighter_walk_000.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_000.png"
+        }
       ]
     }
   },
-  "note": "This manifest will expand as the remaining AI-generated MVP frames are cleaned, aligned, and approved."
+  "pending_next_batch": [
+    "bot_crimson_rival_block_001.png",
+    "bot_crimson_rival_defeat_002.png"
+  ],
+  "note": "Original AI output is immutable under assets/characters/originals. Runtime files are deterministic cleaned copies."
 }

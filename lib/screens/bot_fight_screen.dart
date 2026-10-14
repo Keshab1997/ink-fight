@@ -26,12 +26,6 @@ class _BotFightScreenState extends State<BotFightScreen> {
     super.dispose();
   }
 
-  void _showNotReady(String label) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label animation is next in the frame pass.')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -56,8 +50,8 @@ class _BotFightScreenState extends State<BotFightScreen> {
               child: _BattleControls(
                 onPunch: () => _game.playPlayerAction('light_punch'),
                 onKick: () => _game.playPlayerAction('heavy_kick'),
-                onBlock: () => _showNotReady('Block'),
-                onJump: () => _showNotReady('Jump'),
+                onBlock: () => _game.playPlayerAction('block'),
+                onJump: () => _game.playPlayerAction('jump'),
               ),
             ),
             const Positioned(

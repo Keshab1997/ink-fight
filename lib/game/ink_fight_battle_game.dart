@@ -14,6 +14,10 @@ class InkFightBattleGame extends FlameGame {
       'assets/characters/runtime/player_ink_fighter/light_punch/player_ink_fighter_light_punch_002.png';
   static const _playerKickPath =
       'assets/characters/runtime/player_ink_fighter/heavy_kick/player_ink_fighter_heavy_kick_003.png';
+  static const _playerBlockPath =
+      'assets/characters/runtime/player_ink_fighter/block/player_ink_fighter_block_001.png';
+  static const _playerJumpPath =
+      'assets/characters/runtime/player_ink_fighter/jump/player_ink_fighter_jump_002.png';
   static const _rivalIdlePath =
       'assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_000.png';
 
@@ -22,6 +26,8 @@ class InkFightBattleGame extends FlameGame {
   SpriteAnimation? _playerIdle;
   SpriteAnimation? _playerPunch;
   SpriteAnimation? _playerKick;
+  SpriteAnimation? _playerBlock;
+  SpriteAnimation? _playerJump;
   bool _loaded = false;
 
   @override
@@ -37,6 +43,16 @@ class InkFightBattleGame extends FlameGame {
     );
     _playerKick = await _loadAnimation(
       [_playerIdlePath, _playerKickPath, _playerIdlePath],
+      stepTime: .18,
+      loop: false,
+    );
+    _playerBlock = await _loadAnimation(
+      [_playerIdlePath, _playerBlockPath, _playerIdlePath],
+      stepTime: .16,
+      loop: false,
+    );
+    _playerJump = await _loadAnimation(
+      [_playerIdlePath, _playerJumpPath, _playerIdlePath],
       stepTime: .18,
       loop: false,
     );
@@ -106,6 +122,8 @@ class InkFightBattleGame extends FlameGame {
     final animation = switch (action) {
       'light_punch' => _playerPunch,
       'heavy_kick' => _playerKick,
+      'block' => _playerBlock,
+      'jump' => _playerJump,
       _ => _playerIdle,
     };
     if (animation == null) {
@@ -113,7 +131,12 @@ class InkFightBattleGame extends FlameGame {
     }
 
     _player!.animation = animation;
-    final duration = action == 'heavy_kick' ? 860 : 700;
+    final duration = switch (action) {
+      'heavy_kick' => 860,
+      'block' => 640,
+      'jump' => 720,
+      _ => 700,
+    };
     async.Timer(Duration(milliseconds: duration), () {
       if (_player?.isMounted ?? false) {
         _player!.animation = _playerIdle;
