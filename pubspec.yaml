@@ -68,6 +68,7 @@ flutter:
     - assets/characters/runtime/player_ink_fighter/hurt/
     - assets/characters/runtime/player_ink_fighter/victory/
     - assets/characters/runtime/player_ink_fighter/defeat/
+    - assets/characters/runtime/player_ink_fighter/knockdown/
     - assets/characters/runtime/bot_crimson_rival/idle/
     - assets/characters/runtime/bot_crimson_rival/light_punch/
     - assets/characters/runtime/bot_crimson_rival/heavy_kick/
