@@ -19584,11 +19584,11 @@ _.Y$=b
 _.ai$=_.aa$=0},
 Mf:function Mf(){},
 alM(a){var s
-switch(a.a){case 0:s=B.xn
+switch(a.a){case 0:s=B.xm
 break
 case 1:s=B.xl
 break
-case 2:s=B.xm
+case 2:s=B.xn
 break
 default:s=null}return s},
 r_:function r_(a,b){this.a=a
@@ -65776,10 +65776,10 @@ B.xh=new A.cM(B.u,B.u,B.u,B.u)
 B.jw=new A.r_(1,"normal")
 B.xk=new A.l1(null)
 B.xl=new A.r0(40,140,850,0.6,0.4,0.12,200,52)
-B.xj=new A.r_(2,"hard")
-B.xm=new A.r0(25,70,540,0.8,0.5,0.03,120,42)
 B.xi=new A.r_(0,"easy")
-B.xn=new A.r0(50,210,1300,0.35,0.25,0.35,320,62)
+B.xm=new A.r0(50,210,1300,0.35,0.25,0.35,320,54)
+B.xj=new A.r_(2,"hard")
+B.xn=new A.r0(25,70,540,0.8,0.5,0.03,120,42)
 B.xo=new A.r1(null,null,null,null,null,null,null)
 B.xp=new A.r2(null,null,null,null,null,null,null,null,null,null,null,null,null,null)
 B.xq=new A.r3(null,null,null,null,null,null,null,null,null,null,null,null,null)
