@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import 'app_routes.dart';
+import '../widgets/ink_back_button.dart';
 
 /// Settings, in the ink palette: a paper sheet with two panels, a working sound
 /// switch, and the small print about the build.
@@ -112,7 +112,7 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const _BackButton(),
+        const InkBackButton(),
         const SizedBox(width: 14),
         const Text(
           'SETTINGS',
@@ -316,41 +316,8 @@ class _RowShell extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing != null) trailing!,
+            ?trailing,
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  const _BackButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Back',
-      child: Material(
-        color: InkColors.ink,
-        borderRadius: BorderRadius.circular(13),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(13),
-          onTap: () {
-            // A deep link can open this screen with nothing behind it, so fall
-            // back to the menu rather than leaving the player on a dead page.
-            final navigator = Navigator.of(context);
-            if (navigator.canPop()) {
-              navigator.pop();
-              return;
-            }
-            navigator.pushReplacementNamed(InkRoutes.home);
-          },
-          child: const SizedBox(
-            width: 42,
-            height: 42,
-            child: Icon(Icons.arrow_back_rounded, color: InkColors.white),
-          ),
         ),
       ),
     );
