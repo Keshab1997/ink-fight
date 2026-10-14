@@ -12,4 +12,6 @@ These selected concept images establish the intended landscape UI direction. The
 
 The player and black/crimson rival references are the locked starting point for animation prompts. The `frames/` folder contains the first AI-generated sample frames: idle, light punch, and heavy-kick contact references for both characters. They are still source references, not final transparent runtime sprites; background cleanup, baseline alignment, and animation frame generation follow the asset pipeline.
 
+The untouched AI outputs are archived under `assets/characters/originals/`. Cleaned RGBA samples are under `assets/characters/runtime/`; the runtime folders are the only character images intended for Flame.
+
 Production UI text, buttons, health bars, and accessibility states should be implemented in Flutter/Flame rather than baked into an image.

@@ -1,0 +1,25 @@
+{
+  "canvas": 1024,
+  "baseline_y": 900,
+  "background": "transparent_rgba",
+  "status": "sample_runtime_frames",
+  "characters": {
+    "player_ink_fighter": {
+      "source_archive": "assets/characters/originals/player_ink_fighter",
+      "frames": [
+        "player_ink_fighter_idle_000.png",
+        "player_ink_fighter_light_punch_002.png",
+        "player_ink_fighter_heavy_kick_003.png"
+      ]
+    },
+    "bot_crimson_rival": {
+      "source_archive": "assets/characters/originals/bot_crimson_rival",
+      "frames": [
+        "bot_crimson_rival_idle_000.png",
+        "bot_crimson_rival_light_punch_002.png",
+        "bot_crimson_rival_heavy_kick_003.png"
+      ]
+    }
+  },
+  "note": "This manifest will expand as the remaining AI-generated MVP frames are cleaned, aligned, and approved."
+}

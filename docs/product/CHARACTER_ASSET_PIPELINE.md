@@ -9,30 +9,32 @@ Turn AI-generated doodle references into reliable, lightweight Flame assets with
 ```text
 assets/
   characters/
-    player_ink_fighter/
-      reference/
-      idle/
-      walk/
-      jump/
-      light_punch/
-      heavy_kick/
-      block/
-      hurt/
-      knockdown/
-      victory/
-      defeat/
-    bot_crimson_rival/
-      reference/
-      idle/
-      walk/
-      jump/
-      light_punch/
-      heavy_kick/
-      block/
-      hurt/
-      knockdown/
-      victory/
-      defeat/
+    originals/                    # untouched AI output archive
+      player_ink_fighter/
+      bot_crimson_rival/
+    runtime/                      # cleaned RGBA frames used by Flame
+      player_ink_fighter/
+        idle/
+        walk/
+        jump/
+        light_punch/
+        heavy_kick/
+        block/
+        hurt/
+        knockdown/
+        victory/
+        defeat/
+      bot_crimson_rival/
+        idle/
+        walk/
+        jump/
+        light_punch/
+        heavy_kick/
+        block/
+        hurt/
+        knockdown/
+        victory/
+        defeat/
 ```
 
 ## AI-to-game workflow
