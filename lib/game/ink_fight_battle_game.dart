@@ -375,13 +375,21 @@ class InkFightBattleGame extends FlameGame {
     );
   }
 
-  /// Held MOVE control: walk towards the rival while pressed.
-  void setPlayerMoving(bool moving) {
+  /// Continuous MOVE control: -1 walks away from the rival, +1 walks towards
+  /// them, anything between scales the stride. The rules apply
+  /// walkSpeed * |axis| and keep the facing locked onto the rival, so a
+  /// negative axis is a retreat, not a turn.
+  void setPlayerMoveAxis(double axis) {
     if (_match.isFinished) {
       return;
     }
-    _match.setMoveAxis(FighterId.player, moving ? 1 : 0);
+    _match.setMoveAxis(FighterId.player, axis);
   }
+
+  /// Held MOVE control: walk towards the rival while pressed. Delegates to
+  /// [setPlayerMoveAxis]; kept speaking in booleans for the tests and any
+  /// caller that only has a button.
+  void setPlayerMoving(bool moving) => setPlayerMoveAxis(moving ? 1 : 0);
 
   /// Back to the countdown with full health; the arena keeps its layout and
   /// drops every scrap of feel state from the finished match.

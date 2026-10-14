@@ -6,6 +6,7 @@ import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
 import 'package:inkfight/game/rules/match_rules.dart';
 import 'package:inkfight/screens/bot_fight_screen.dart';
+import 'package:inkfight/widgets/virtual_joystick.dart';
 
 /// Screen-level coverage for the live HUD and the decided-match card.
 /// The headless view/controller behaviour lives in `bot_fight_game_test.dart`.
@@ -117,5 +118,90 @@ void main() {
     await tester.pump();
 
     expect(game.botProfile, BotProfile.hard);
+  });
+
+  /// Pumps a bare joystick over a callback recorder — no game, no assets,
+  /// just the control the battle row now speaks through.
+  Future<List<double>> pumpJoystick(
+    WidgetTester tester,
+    VoidCallback onJump,
+  ) async {
+    final axes = <double>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: VirtualJoystick(onAxisChanged: axes.add, onJump: onJump),
+          ),
+        ),
+      ),
+    );
+    return axes;
+  }
+
+  testWidgets('dragging the joystick right reports ~1, releasing reports 0', (
+    tester,
+  ) async {
+    var jumps = 0;
+    final axes = await pumpJoystick(tester, () => jumps++);
+
+    final centre = tester.getCenter(find.byType(VirtualJoystick));
+    final gesture = await tester.startGesture(centre);
+    await tester.pump();
+    // Past the 30 dp travel radius, so the axis saturates at +1.
+    await gesture.moveBy(const Offset(60, 0));
+    await tester.pump();
+    expect(axes, isNotEmpty);
+    expect(axes.last, closeTo(1, .01));
+    expect(jumps, 0, reason: 'a horizontal drag is not a jump');
+
+    await gesture.up();
+    await tester.pump(
+      const Duration(milliseconds: 150),
+    ); // spring home (120 ms)
+    expect(axes.last, 0, reason: 'release always reports 0');
+  });
+
+  testWidgets('flicking the joystick up fires one edge-triggered jump', (
+    tester,
+  ) async {
+    var jumps = 0;
+    final axes = await pumpJoystick(tester, () => jumps++);
+
+    final centre = tester.getCenter(find.byType(VirtualJoystick));
+    final gesture = await tester.startGesture(centre);
+    // dy / travel = -40/30 ≈ -1.33, past the -.55 threshold.
+    await gesture.moveBy(const Offset(0, -40));
+    await tester.pump();
+    expect(jumps, 1);
+    expect(
+      axes.where((axis) => axis != 0),
+      isEmpty,
+      reason: 'vertical input never moves the fighter',
+    );
+
+    // Still held up: no refire while the edge stays crossed.
+    await gesture.moveBy(const Offset(0, -10));
+    await tester.pump();
+    expect(jumps, 1);
+
+    // Back near centre re-arms; the next flick fires again.
+    await gesture.moveBy(const Offset(0, 50));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -40));
+    await tester.pump();
+    expect(jumps, 2);
+
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(axes.last, 0);
+
+    // A fresh gesture starts armed.
+    final second = await tester.startGesture(centre);
+    await second.moveBy(const Offset(0, -40));
+    await tester.pump();
+    expect(jumps, 3);
+    await second.up();
+    await tester.pump(const Duration(milliseconds: 150));
   });
 }

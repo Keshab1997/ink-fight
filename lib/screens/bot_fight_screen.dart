@@ -6,6 +6,7 @@ import '../game/ink_fight_battle_game.dart';
 import '../game/rules/input_command.dart';
 import '../game/rules/match_rules.dart';
 import '../theme/app_theme.dart';
+import '../widgets/virtual_joystick.dart';
 
 class BotFightScreen extends StatefulWidget {
   const BotFightScreen({super.key, this.difficulty = BotDifficulty.normal});
@@ -77,14 +78,8 @@ class _BotFightScreenState extends State<BotFightScreen> {
                 onKick: () => _game.sendPlayerAction(InputAction.heavyKick),
                 onBlock: () => _game.sendPlayerAction(InputAction.block),
                 onJump: () => _game.sendPlayerAction(InputAction.jump),
-                onMoveStart: () => _game.setPlayerMoving(true),
-                onMoveEnd: () => _game.setPlayerMoving(false),
+                onMoveAxis: _game.setPlayerMoveAxis,
               ),
-            ),
-            const Positioned(
-              left: 18,
-              bottom: 84,
-              child: _ArenaStatus(label: 'BOT FIGHT / PRACTICE'),
             ),
           ],
         ),
@@ -318,73 +313,97 @@ class _BattleControls extends StatelessWidget {
     required this.onKick,
     required this.onBlock,
     required this.onJump,
-    required this.onMoveStart,
-    required this.onMoveEnd,
+    required this.onMoveAxis,
   });
 
   final VoidCallback onPunch;
   final VoidCallback onKick;
   final VoidCallback onBlock;
   final VoidCallback onJump;
-  final VoidCallback onMoveStart;
-  final VoidCallback onMoveEnd;
+
+  /// The joystick's -1 … +1: back and forth along the arena line. Its upward
+  /// flick shares [onJump] with the button.
+  final ValueChanged<double> onMoveAxis;
+
+  /// The touch budget of one action button; never smaller than the old row.
+  static const double _actionWidth = 78;
+  static const double _gap = 8;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        GestureDetector(
-          // Hold to walk towards the rival; release to stop.
-          onLongPressStart: (_) => onMoveStart(),
-          onLongPressEnd: (_) => onMoveEnd(),
-          onLongPressCancel: onMoveEnd,
-          child: Container(
-            height: 58,
-            padding: const EdgeInsets.symmetric(horizontal: 15),
-            decoration: BoxDecoration(
-              color: InkColors.white.withValues(alpha: .78),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: InkColors.line),
-            ),
-            child: const Row(
+    final actions = <Widget>[
+      _ControlButton(
+        label: 'PUNCH',
+        icon: Icons.bolt_rounded,
+        onTap: onPunch,
+        primary: true,
+      ),
+      _ControlButton(
+        label: 'KICK',
+        icon: Icons.sports_martial_arts_rounded,
+        onTap: onKick,
+      ),
+      _ControlButton(
+        label: 'BLOCK',
+        icon: Icons.shield_outlined,
+        onTap: onBlock,
+      ),
+      _ControlButton(label: 'JUMP', icon: Icons.north_rounded, onTap: onJump),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // One row wants the joystick, a breathing gap and all four 78 dp
+        // buttons (~464 dp). A window too narrow for that — 360 dp wide —
+        // stacks the buttons into a 2×2 grid on the right instead: the
+        // targets never shrink, the row just folds.
+        final wantsRow =
+            constraints.maxWidth >=
+            VirtualJoystick.defaultSize + 24 + 4 * _actionWidth + 3 * _gap;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.gamepad_rounded, size: 20, color: InkColors.ink),
-                SizedBox(width: 8),
-                Text(
-                  'MOVE',
-                  style: TextStyle(
-                    color: InkColors.inkSoft,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.2,
-                  ),
-                ),
+                const _ArenaStatus(label: 'BOT FIGHT / PRACTICE'),
+                const SizedBox(height: _gap),
+                VirtualJoystick(onAxisChanged: onMoveAxis, onJump: onJump),
               ],
             ),
-          ),
-        ),
-        const Spacer(),
-        _ControlButton(
-          label: 'PUNCH',
-          icon: Icons.bolt_rounded,
-          onTap: onPunch,
-          primary: true,
-        ),
-        const SizedBox(width: 8),
-        _ControlButton(
-          label: 'KICK',
-          icon: Icons.sports_martial_arts_rounded,
-          onTap: onKick,
-        ),
-        const SizedBox(width: 8),
-        _ControlButton(
-          label: 'BLOCK',
-          icon: Icons.shield_outlined,
-          onTap: onBlock,
-        ),
-        const SizedBox(width: 8),
-        _ControlButton(label: 'JUMP', icon: Icons.north_rounded, onTap: onJump),
-      ],
+            const Spacer(),
+            if (wantsRow)
+              for (var i = 0; i < actions.length; i++) ...[
+                if (i > 0) const SizedBox(width: _gap),
+                actions[i],
+              ]
+            else
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      actions[0],
+                      const SizedBox(width: _gap),
+                      actions[1],
+                    ],
+                  ),
+                  const SizedBox(height: _gap),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      actions[2],
+                      const SizedBox(width: _gap),
+                      actions[3],
+                    ],
+                  ),
+                ],
+              ),
+          ],
+        );
+      },
     );
   }
 }
