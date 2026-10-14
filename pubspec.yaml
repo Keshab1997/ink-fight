@@ -66,6 +66,7 @@ flutter:
     - assets/characters/runtime/player_ink_fighter/jump/
     - assets/characters/runtime/player_ink_fighter/block/
     - assets/characters/runtime/player_ink_fighter/hurt/
+    - assets/characters/runtime/player_ink_fighter/hurt_heavy/
     - assets/characters/runtime/player_ink_fighter/victory/
     - assets/characters/runtime/player_ink_fighter/defeat/
     - assets/characters/runtime/player_ink_fighter/knockdown/
@@ -76,6 +77,7 @@ flutter:
     - assets/characters/runtime/bot_crimson_rival/jump/
     - assets/characters/runtime/bot_crimson_rival/block/
     - assets/characters/runtime/bot_crimson_rival/hurt/
+    - assets/characters/runtime/bot_crimson_rival/hurt_heavy/
     - assets/characters/runtime/bot_crimson_rival/victory/
     - assets/characters/runtime/bot_crimson_rival/knockdown/
     - assets/characters/runtime/bot_crimson_rival/defeat/
