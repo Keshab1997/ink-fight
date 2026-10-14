@@ -102,6 +102,28 @@ class MatchController {
   FighterState stateOf(FighterId id) =>
       id == FighterId.player ? _player : _rival;
 
+  /// Distance between the two fighters' centres, in arena units. Symmetric:
+  /// `distanceBetween(a, b) == distanceBetween(b, a)`.
+  double distanceBetween(FighterId a, FighterId b) =>
+      (stateOf(b).x - stateOf(a).x).abs();
+
+  /// Whether [attacker]'s swing, as it stands right now, would reach the
+  /// opponent on distance and facing alone: the attacker is mid-swing, the
+  /// opponent is in front of them, and the gap is within that swing's reach.
+  ///
+  /// This is geometry only. A hit also needs the swing's active window to be
+  /// open and, for a jab, the target to be on the ground; the tick loop checks
+  /// both itself. So `true` means the gap covers the swing right now, and
+  /// `false` means it does not cover it at this distance, whatever the timing.
+  bool isInReach(FighterId attacker) {
+    final swing = stateOf(attacker);
+    final frame = rules.reachOf(swing.action);
+    if (frame == null) {
+      return false;
+    }
+    return _inReach(swing, stateOf(_opponentOf(attacker)), frame);
+  }
+
   /// Starts a fresh match on the same rules: the rematch path, and the only
   /// way back from a finished match. Everything a match can accumulate — the
   /// clock, the sequence numbers, held movement — is cleared here.
@@ -261,17 +283,18 @@ class MatchController {
       case FighterAction.lightPunch:
       case FighterAction.heavyKick:
         final elapsed = fighter.actionElapsedMs + ms;
-        final frame = _frameDataFor(fighter.action);
+        // Only attack actions reach this branch, so the lookup cannot be null.
+        final frame = rules.reachOf(fighter.action)!;
         if (elapsed >= frame.totalMs) {
           if (!fighter.attackConnected) {
-            // The window closed on air: a whiff the view may read (it stays
-            // quiet on one today, but the event belongs to the record).
+            // The window closed on air: a whiff, recorded in the event list
+            // alongside landed and blocked swings.
             _hitEvents.add(
               HitEvent(
                 attacker: fighter.id,
                 defender: _opponentOf(fighter.id),
                 kind: HitKind.whiff,
-                heavy: frame == rules.heavyAttack,
+                heavy: fighter.action == FighterAction.heavyKick,
                 x: fighter.x,
                 ko: false,
               ),
@@ -369,8 +392,8 @@ class MatchController {
       if (!attacker.isAttacking || attacker.attackConnected) {
         continue;
       }
-      final frame = _frameDataFor(attacker.action);
-      if (!frame.isActiveAt(attacker.actionElapsedMs)) {
+      final frame = rules.reachOf(attacker.action);
+      if (frame == null || !frame.isActiveAt(attacker.actionElapsedMs)) {
         continue;
       }
 
@@ -378,12 +401,12 @@ class MatchController {
       // A light punch passes under a fighter who is in the air; a heavy kick
       // still catches them on the way up or down. Tunable here and nowhere
       // else — it is what gives the jump a defensive use.
-      if (defender.isAirborne && frame == rules.lightAttack) {
+      if (defender.isAirborne &&
+          attacker.action == FighterAction.lightPunch) {
         continue;
       }
 
-      final dx = defender.x - attacker.x;
-      if (dx * attacker.facing <= 0 || dx.abs() > frame.reach) {
+      if (!_inReach(attacker, defender, frame)) {
         continue;
       }
 
@@ -398,7 +421,7 @@ class MatchController {
           attacker: id,
           defender: _opponentOf(id),
           kind: blocked ? HitKind.blocked : HitKind.hit,
-          heavy: frame == rules.heavyAttack,
+          heavy: attacker.action == FighterAction.heavyKick,
           // The contact point: midway along the two centres, which is where
           // the limbs actually meet (reach is centre-to-centre by design).
           x: (attacker.x + defender.x) / 2,
@@ -478,8 +501,18 @@ class MatchController {
 
   double _clampX(double x) => x.clamp(rules.minX, rules.maxX);
 
-  AttackFrameData _frameDataFor(FighterAction action) =>
-      action == FighterAction.heavyKick ? rules.heavyAttack : rules.lightAttack;
+  /// The one definition of "this swing covers that fighter": the defender is
+  /// in front of the attacker and within the swing's reach. [isInReach] and
+  /// the hit loop both call it, so the view's answer and the simulation's
+  /// answer cannot drift apart.
+  bool _inReach(
+    FighterState attacker,
+    FighterState defender,
+    AttackFrameData frame,
+  ) {
+    final dx = defender.x - attacker.x;
+    return dx * attacker.facing > 0 && dx.abs() <= frame.reach;
+  }
 
   double _axisOf(FighterId id) => _moveAxis[id] ?? 0;
 

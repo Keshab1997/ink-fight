@@ -90,4 +90,39 @@ void main() {
     expect(rules.tickMs, lessThanOrEqualTo(17));
     expect(rules.maxCatchUpMs, greaterThanOrEqualTo(rules.tickMs * 2));
   });
+
+  test('reach ordering and the opening gap hold for the tightened numbers', () {
+    final light = rules.lightAttack;
+    final heavy = rules.heavyAttack;
+    final openingGap = rules.rivalStartX - rules.startX;
+
+    expect(
+      light.reach,
+      greaterThan(rules.minFighterDistance),
+      reason: 'a jab has to reach past the pushbox to ever connect',
+    );
+    expect(light.reach, lessThan(heavy.reach));
+    expect(
+      heavy.reach,
+      lessThan(openingGap),
+      reason: 'the match still opens out of reach of both attacks',
+    );
+    expect(light.reach, lessThan(openingGap));
+  });
+
+  test('reachOf returns the frame data for each attack and null otherwise', () {
+    expect(rules.reachOf(FighterAction.lightPunch), same(rules.lightAttack));
+    expect(rules.reachOf(FighterAction.heavyKick), same(rules.heavyAttack));
+
+    for (final action in [
+      FighterAction.idle,
+      FighterAction.walk,
+      FighterAction.jump,
+      FighterAction.block,
+      FighterAction.hitstun,
+      FighterAction.blockstun,
+    ]) {
+      expect(rules.reachOf(action), isNull, reason: '$action has no hitbox');
+    }
+  });
 }

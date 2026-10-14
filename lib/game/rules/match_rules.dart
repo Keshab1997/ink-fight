@@ -39,8 +39,12 @@ enum FighterAction {
 
 /// One attack's numbers, in the shape a fighting game publishes them.
 ///
-/// `reach` is measured centre-to-centre and already includes both fighters'
-/// half-widths, so a hit lands when `(defender.x - attacker.x).abs() <= reach`.
+/// `reach` is measured centre-to-centre, so a hit lands when
+/// `(defender.x - attacker.x).abs() <= reach`. Measured on the delivered
+/// sprites, the visible body spans about ±29 arena units around its centre
+/// (300-unit arena), so two bodies first touch at a centre distance of about
+/// 58. Reach is kept close to that, so a clean hit reads as contact instead of
+/// damage arriving from across the room.
 /// `blockedDamage` is stated per attack instead of being derived from a global
 /// multiplier: a blocked light punch is fully absorbed (0) while a blocked
 /// heavy kick still chips, and the table should say so out loud.
@@ -105,7 +109,7 @@ class MatchRules {
       recoveryMs: 190,
       damage: 6,
       blockedDamage: 0,
-      reach: 54,
+      reach: 46,
       knockback: 8,
       hitstunMs: 220,
       blockstunMs: 150,
@@ -116,7 +120,7 @@ class MatchRules {
       recoveryMs: 340,
       damage: 14,
       blockedDamage: 2,
-      reach: 66,
+      reach: 58,
       knockback: 20,
       hitstunMs: 420,
       blockstunMs: 260,
@@ -167,4 +171,19 @@ class MatchRules {
   double get minX => fighterHalfWidth;
   double get maxX => arenaWidth - fighterHalfWidth;
   double get rivalStartX => arenaWidth - startX;
+
+  /// The attack numbers for [action], or `null` when the action is not an
+  /// attack (idle, walk, jump, block and the two stuns carry no hitbox).
+  ///
+  /// The view and the bot read reach through this instead of comparing
+  /// against the frame objects by identity, so "what can this fighter hit
+  /// with right now" is one lookup. It returns the same instances as
+  /// [lightAttack] and [heavyAttack], never copies.
+  AttackFrameData? reachOf(FighterAction action) {
+    return switch (action) {
+      FighterAction.lightPunch => lightAttack,
+      FighterAction.heavyKick => heavyAttack,
+      _ => null,
+    };
+  }
 }

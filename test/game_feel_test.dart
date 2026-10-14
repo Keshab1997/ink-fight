@@ -190,12 +190,13 @@ void main() {
         final rival = rivalOf(game);
 
         // Walk in and jab until it lands (the pattern the smoke test uses).
+        final jabReach = game.match.rules.lightAttack.reach;
         game.setPlayerMoving(true);
         var landed = false;
         for (var i = 0; i < 400 && !landed; i++) {
           final player = game.match.stateOf(FighterId.player);
           final gap = (game.match.stateOf(FighterId.rival).x - player.x).abs();
-          if (gap > 54) {
+          if (gap > jabReach * .9) {
             game.setPlayerMoving(true);
           } else {
             game.setPlayerMoving(false);
@@ -475,8 +476,11 @@ void main() {
 
     test('a swing that closes on air reports a whiff at the attacker', () {
       final match = fightingMatch();
-      // The fighters start 80 units apart — outside the light punch's 54.
-      expect((match.rival.x - match.player.x).abs(), greaterThan(54));
+      // The fighters start 80 units apart — outside the light punch's reach.
+      expect(
+        (match.rival.x - match.player.x).abs(),
+        greaterThan(match.rules.lightAttack.reach),
+      );
       final playerX = match.player.x;
 
       match.submit(
