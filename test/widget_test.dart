@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/main.dart';
 import 'package:inkfight/screens/app_routes.dart';
 import 'package:inkfight/screens/bot_fight_screen.dart';
+import 'package:inkfight/screens/difficulty_screen.dart';
+import 'package:inkfight/screens/home_screen.dart';
 import 'package:inkfight/screens/settings_screen.dart';
+import 'package:inkfight/theme/app_theme.dart';
 
 /// Puts the app on a given route the way the browser does: the platform's
 /// default route name is what a web build reads out of the URL fragment
@@ -13,6 +17,27 @@ Future<void> pumpDeepLink(WidgetTester tester, String route) async {
   tester.binding.platformDispatcher.defaultRouteNameTestValue = route;
   addTearDown(tester.binding.platformDispatcher.clearDefaultRouteNameTestValue);
   await tester.pumpWidget(const InkFightApp());
+}
+
+/// Mirrors [InkFightApp] but with a navigator observer, so a test can read the
+/// route arguments a tap pushed.
+Widget _appWithObserver(_RouteRecorder observer) {
+  return MaterialApp(
+    debugShowCheckedModeBanner: false,
+    theme: InkFightTheme.light,
+    navigatorObservers: [observer],
+    // The table already maps '/' to the menu, so no `home:` (the two clash).
+    routes: InkRoutes.table,
+  );
+}
+
+class _RouteRecorder extends NavigatorObserver {
+  final List<Route<dynamic>> pushed = [];
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    pushed.add(route);
+  }
 }
 
 void main() {
@@ -26,16 +51,88 @@ void main() {
     expect(find.text('SETTINGS'), findsOneWidget);
   });
 
-  testWidgets('opens the first bot fight arena', (tester) async {
+  testWidgets('menu BOT FIGHT opens the difficulty picker', (tester) async {
     await tester.pumpWidget(const InkFightApp());
 
     await tester.tap(find.text('BOT FIGHT'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DifficultyScreen), findsOneWidget);
+    expect(find.text('EASY'), findsOneWidget);
+    expect(find.text('NORMAL'), findsOneWidget);
+    expect(find.text('HARD'), findsOneWidget);
+    expect(find.text('RECOMMENDED'), findsOneWidget);
+    expect(find.byType(BotFightScreen), findsNothing, reason: 'not yet');
+  });
+
+  testWidgets('picking NORMAL opens the bot fight arena', (tester) async {
+    await tester.pumpWidget(const InkFightApp());
+    await tester.tap(find.text('BOT FIGHT'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('NORMAL'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
 
+    expect(find.byType(BotFightScreen), findsOneWidget);
     expect(find.text('CRIMSON RIVAL'), findsOneWidget);
     expect(find.text('PUNCH'), findsOneWidget);
     expect(find.text('KICK'), findsOneWidget);
+  });
+
+  testWidgets('picking HARD pushes the arena with HARD as its argument', (
+    tester,
+  ) async {
+    final observer = _RouteRecorder();
+    await tester.pumpWidget(_appWithObserver(observer));
+    await tester.tap(find.text('BOT FIGHT'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('HARD'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.byType(BotFightScreen), findsOneWidget);
+    final arenaRoute = observer.pushed.last;
+    expect(arenaRoute.settings.name, InkRoutes.botFight);
+    expect(arenaRoute.settings.arguments, BotDifficulty.hard);
+  });
+
+  testWidgets('back from the picker returns to the menu', (tester) async {
+    await tester.pumpWidget(const InkFightApp());
+    await tester.tap(find.text('BOT FIGHT'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DifficultyScreen), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.byType(DifficultyScreen), findsNothing);
+  });
+
+  testWidgets('the READY badge also opens the picker', (tester) async {
+    await tester.pumpWidget(const InkFightApp());
+
+    await tester.tap(find.text('BOT MODE READY'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DifficultyScreen), findsOneWidget);
+  });
+
+  testWidgets('the difficulty deep link lands on the picker, back goes home', (
+    tester,
+  ) async {
+    await pumpDeepLink(tester, InkRoutes.difficulty);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DifficultyScreen), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DifficultyScreen), findsNothing);
+    expect(find.text('DOODLE COMBAT'), findsOneWidget);
   });
 
   testWidgets('online mode explains that it is planned', (tester) async {

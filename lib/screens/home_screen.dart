@@ -132,7 +132,7 @@ class _HeroCopy extends StatelessWidget {
   final bool compact;
 
   void _showIntro(BuildContext context) {
-    Navigator.of(context).pushNamed(InkRoutes.botFight);
+    Navigator.of(context).pushNamed(InkRoutes.difficulty);
   }
 
   @override
@@ -269,7 +269,7 @@ class _ActionRail extends StatelessWidget {
             label: 'BOT FIGHT',
             caption: 'PRACTICE THE BASICS',
             icon: Icons.bolt_rounded,
-            onTap: () => Navigator.of(context).pushNamed(InkRoutes.botFight),
+            onTap: () => Navigator.of(context).pushNamed(InkRoutes.difficulty),
           ),
         ),
         const SizedBox(width: 8),
