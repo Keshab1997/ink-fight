@@ -72,7 +72,7 @@ class BotProfile {
     heavyChance: .25,
     hesitationChance: .35,
     recoveryMs: 320,
-    preferredGap: 62,
+    preferredGap: 54,
   );
 
   static const BotProfile normal = BotProfile(
