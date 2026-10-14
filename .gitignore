@@ -34,5 +34,9 @@ GoogleService-Info.plist
 *.log
 *.bak
 
+# Agent screenshot artifacts (throwaway captures, never commit - see AGENTS.md)
+.agent-screens/
+.openchamber/
+
 # Do not commit production ad or backend credentials
 secrets/
