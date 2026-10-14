@@ -68,7 +68,10 @@ def align_to_runtime_canvas(image: Image.Image) -> Image.Image:
         raise ValueError("the frame has no visible pixels after background removal")
 
     cropped = image.crop(bbox)
-    scale = min(1.0, MAX_CHARACTER_SIZE / max(cropped.size))
+    # Normalise in both directions: a generation that came back with extra
+    # white margin (or a non-square canvas) must land at the same on-screen
+    # size as its neighbours, or the animation pops when it swaps in.
+    scale = MAX_CHARACTER_SIZE / max(cropped.size)
     if scale != 1.0:
         cropped = cropped.resize(
             (round(cropped.width * scale), round(cropped.height * scale)),
