@@ -4,6 +4,49 @@ import 'fighter_state.dart';
 import 'input_command.dart';
 import 'match_rules.dart';
 
+/// How one resolved swing ended: clean [hit], guarded [blocked], or [whiff]
+/// (the active window closed without touching anyone).
+enum HitKind { hit, blocked, whiff }
+
+/// One swing's result, as plain data for the view to react to.
+///
+/// The controller decides hits; the arena only *presents* them — hit-stop,
+/// the ink burst and the shake all hang off this value
+/// (docs/technical/GAME_FEEL.md §2–§3). No Flame and no widget types appear
+/// here, the same boundary the rest of this library keeps: `x` is a position
+/// along the arena line in arena units, not a screen coordinate.
+class HitEvent {
+  const HitEvent({
+    required this.attacker,
+    required this.defender,
+    required this.kind,
+    required this.heavy,
+    required this.x,
+    required this.ko,
+  });
+
+  /// Who swung.
+  final FighterId attacker;
+
+  /// Who was (or would have been) on the receiving end.
+  final FighterId defender;
+
+  final HitKind kind;
+
+  /// True for the heavy kick, false for the light punch: the view sizes the
+  /// stop and the ink off this, never off damage numbers of its own.
+  final bool heavy;
+
+  /// Where along the arena line the swing resolved: the contact point for a
+  /// hit or a block (midway between the fighters), the attacker's position
+  /// for a whiff.
+  final double x;
+
+  /// True when this blow took the defender's health to zero — the knockout
+  /// the arena plays its slow-motion finish for (GAME_FEEL §5).
+  final bool ko;
+}
+
 /// Runs one local match on [MatchRules], tick by tick.
 ///
 /// The controller owns the match clock, legal state transitions, collision
@@ -29,13 +72,31 @@ class MatchController {
   int _countdownRemainingMs = 0;
   int _timeRemainingMs = 0;
   double _accumulatorMs = 0;
+  final List<HitEvent> _hitEvents = <HitEvent>[];
 
   MatchPhase get phase => _phase;
   MatchOutcome? get outcome => _outcome;
   int get timeRemainingMs => _timeRemainingMs;
+
+  /// How much of the intro countdown is left; the arena draws its
+  /// 3 · 2 · 1 · FIGHT! beats off this (GAME_FEEL §5).
+  int get countdownRemainingMs => _countdownRemainingMs;
   FighterState get player => _player;
   FighterState get rival => _rival;
   bool get isFinished => _phase == MatchPhase.finished;
+
+  /// Takes every swing resolved since the last call, oldest first.
+  ///
+  /// The view drains this once per frame; draining is what keeps a tick that
+  /// resolved a trade (both swings landing) from losing either event.
+  List<HitEvent> drainHitEvents() {
+    if (_hitEvents.isEmpty) {
+      return const <HitEvent>[];
+    }
+    final drained = List<HitEvent>.of(_hitEvents);
+    _hitEvents.clear();
+    return drained;
+  }
 
   /// The current state of either side.
   FighterState stateOf(FighterId id) =>
@@ -53,6 +114,7 @@ class MatchController {
     _timeRemainingMs = rules.roundMs;
     _accumulatorMs = 0;
     _lastSequence.clear();
+    _hitEvents.clear();
     _moveAxis
       ..clear()
       ..[FighterId.player] = 0
@@ -201,6 +263,20 @@ class MatchController {
         final elapsed = fighter.actionElapsedMs + ms;
         final frame = _frameDataFor(fighter.action);
         if (elapsed >= frame.totalMs) {
+          if (!fighter.attackConnected) {
+            // The window closed on air: a whiff the view may read (it stays
+            // quiet on one today, but the event belongs to the record).
+            _hitEvents.add(
+              HitEvent(
+                attacker: fighter.id,
+                defender: _opponentOf(fighter.id),
+                kind: HitKind.whiff,
+                heavy: frame == rules.heavyAttack,
+                x: fighter.x,
+                ko: false,
+              ),
+            );
+          }
           return fighter.copyWith(
             action: FighterAction.idle,
             actionElapsedMs: 0,
@@ -314,8 +390,21 @@ class MatchController {
       final blocked =
           defender.isBlocking &&
           (attacker.x - defender.x) * defender.facing > 0;
+      final taken = _takeHit(defender, frame, blocked: blocked);
       _set(id, attacker.copyWith(attackConnected: true));
-      _set(_opponentOf(id), _takeHit(defender, frame, blocked: blocked));
+      _set(_opponentOf(id), taken);
+      _hitEvents.add(
+        HitEvent(
+          attacker: id,
+          defender: _opponentOf(id),
+          kind: blocked ? HitKind.blocked : HitKind.hit,
+          heavy: frame == rules.heavyAttack,
+          // The contact point: midway along the two centres, which is where
+          // the limbs actually meet (reach is centre-to-centre by design).
+          x: (attacker.x + defender.x) / 2,
+          ko: taken.health <= 0,
+        ),
+      );
     }
   }
 
