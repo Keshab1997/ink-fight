@@ -20,6 +20,7 @@ class FighterState {
     this.jumpRemainingMs = 0,
     this.pushVelocity = 0,
     this.attackConnected = false,
+    this.attackWhiffed = false,
   });
 
   final FighterId id;
@@ -44,6 +45,11 @@ class FighterState {
 
   /// An attack may only land once; this flips when it does.
   final bool attackConnected;
+
+  /// True once this swing's active window has closed without a connect. It
+  /// flips exactly once per swing, so the whiff is reported once, when the
+  /// fist cuts air, and never again during the recovery.
+  final bool attackWhiffed;
 
   /// Only idle and walking fighters may start something new. Attacks, jumps,
   /// blocks and stuns are all committed windows, which is what makes a whiff
@@ -72,6 +78,7 @@ class FighterState {
     int? jumpRemainingMs,
     double? pushVelocity,
     bool? attackConnected,
+    bool? attackWhiffed,
   }) {
     return FighterState(
       id: id,
@@ -85,6 +92,7 @@ class FighterState {
       jumpRemainingMs: jumpRemainingMs ?? this.jumpRemainingMs,
       pushVelocity: pushVelocity ?? this.pushVelocity,
       attackConnected: attackConnected ?? this.attackConnected,
+      attackWhiffed: attackWhiffed ?? this.attackWhiffed,
     );
   }
 }

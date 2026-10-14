@@ -107,21 +107,26 @@ class MatchController {
   double distanceBetween(FighterId a, FighterId b) =>
       (stateOf(b).x - stateOf(a).x).abs();
 
-  /// Whether [attacker]'s swing, as it stands right now, would reach the
-  /// opponent on distance and facing alone: the attacker is mid-swing, the
-  /// opponent is in front of them, and the gap is within that swing's reach.
+  /// Whether a swing with [attack] by [attacker] would land if its active
+  /// window were open right now.
   ///
-  /// This is geometry only. A hit also needs the swing's active window to be
-  /// open and, for a jab, the target to be on the ground; the tick loop checks
-  /// both itself. So `true` means the gap covers the swing right now, and
-  /// `false` means it does not cover it at this distance, whatever the timing.
+  /// This is the same rule the hit loop applies: the opponent is in front of
+  /// the attacker, within [attack]'s reach, and a light punch passes under an
+  /// airborne opponent. It checks no timing and no state of the attacker, so
+  /// it answers "if this swing were live now, would it connect?" It is `false`
+  /// for any action that carries no hitbox.
+  bool wouldConnect(FighterId attacker, FighterAction attack) =>
+      _wouldLand(stateOf(attacker), stateOf(_opponentOf(attacker)), attack);
+
+  /// Whether [attacker] is in contact range with the swing it is doing right
+  /// now: it is attacking and [wouldConnect] says that swing would land.
+  ///
+  /// This does not promise a hit. The active window may not have opened yet,
+  /// or may already have closed, and the opponent can still move or block.
+  /// It answers only "is the fist at the target's distance at this moment".
   bool isInReach(FighterId attacker) {
     final swing = stateOf(attacker);
-    final frame = rules.reachOf(swing.action);
-    if (frame == null) {
-      return false;
-    }
-    return _inReach(swing, stateOf(_opponentOf(attacker)), frame);
+    return swing.isAttacking && wouldConnect(attacker, swing.action);
   }
 
   /// Starts a fresh match on the same rules: the rematch path, and the only
@@ -177,6 +182,7 @@ class MatchController {
             action: FighterAction.lightPunch,
             actionElapsedMs: 0,
             attackConnected: false,
+            attackWhiffed: false,
           ),
         );
       case InputAction.heavyKick:
@@ -186,6 +192,7 @@ class MatchController {
             action: FighterAction.heavyKick,
             actionElapsedMs: 0,
             attackConnected: false,
+            attackWhiffed: false,
           ),
         );
       case InputAction.jump:
@@ -285,28 +292,38 @@ class MatchController {
         final elapsed = fighter.actionElapsedMs + ms;
         // Only attack actions reach this branch, so the lookup cannot be null.
         final frame = rules.reachOf(fighter.action)!;
+
+        // The active window has closed. If nothing was touched, the fist cut
+        // air: report the whiff now, once, so the view can play its cue at the
+        // moment of the miss. The recovery still runs to totalMs below.
+        var whiffed = fighter.attackWhiffed;
+        final windowEnd = frame.startupMs + frame.activeMs;
+        if (!fighter.attackConnected && !whiffed && elapsed >= windowEnd) {
+          _hitEvents.add(
+            HitEvent(
+              attacker: fighter.id,
+              defender: _opponentOf(fighter.id),
+              kind: HitKind.whiff,
+              heavy: fighter.action == FighterAction.heavyKick,
+              x: fighter.x,
+              ko: false,
+            ),
+          );
+          whiffed = true;
+        }
+
         if (elapsed >= frame.totalMs) {
-          if (!fighter.attackConnected) {
-            // The window closed on air: a whiff, recorded in the event list
-            // alongside landed and blocked swings.
-            _hitEvents.add(
-              HitEvent(
-                attacker: fighter.id,
-                defender: _opponentOf(fighter.id),
-                kind: HitKind.whiff,
-                heavy: fighter.action == FighterAction.heavyKick,
-                x: fighter.x,
-                ko: false,
-              ),
-            );
-          }
           return fighter.copyWith(
             action: FighterAction.idle,
             actionElapsedMs: 0,
             attackConnected: false,
+            attackWhiffed: false,
           );
         }
-        return fighter.copyWith(actionElapsedMs: elapsed);
+        return fighter.copyWith(
+          actionElapsedMs: elapsed,
+          attackWhiffed: whiffed,
+        );
 
       case FighterAction.jump:
         final moved = _walk(
@@ -398,15 +415,7 @@ class MatchController {
       }
 
       final defender = stateOf(_opponentOf(id));
-      // A light punch passes under a fighter who is in the air; a heavy kick
-      // still catches them on the way up or down. Tunable here and nowhere
-      // else — it is what gives the jump a defensive use.
-      if (defender.isAirborne &&
-          attacker.action == FighterAction.lightPunch) {
-        continue;
-      }
-
-      if (!_inReach(attacker, defender, frame)) {
+      if (!_wouldLand(attacker, defender, attacker.action)) {
         continue;
       }
 
@@ -501,10 +510,27 @@ class MatchController {
 
   double _clampX(double x) => x.clamp(rules.minX, rules.maxX);
 
-  /// The one definition of "this swing covers that fighter": the defender is
-  /// in front of the attacker and within the swing's reach. [isInReach] and
-  /// the hit loop both call it, so the view's answer and the simulation's
-  /// answer cannot drift apart.
+  /// The one definition of "this swing lands on that fighter", shared by the
+  /// hit loop, [wouldConnect] and [isInReach], so the view's answer and the
+  /// simulation's answer cannot drift apart. It covers the geometry and the
+  /// airborne rule; the active window is the caller's concern.
+  bool _wouldLand(
+    FighterState attacker,
+    FighterState defender,
+    FighterAction attack,
+  ) {
+    final frame = rules.reachOf(attack);
+    if (frame == null) {
+      return false;
+    }
+    if (defender.isAirborne && attack == FighterAction.lightPunch) {
+      return false;
+    }
+    return _inReach(attacker, defender, frame);
+  }
+
+  /// Distance and facing only: the defender is in front of the attacker and
+  /// within [frame]'s reach.
   bool _inReach(
     FighterState attacker,
     FighterState defender,

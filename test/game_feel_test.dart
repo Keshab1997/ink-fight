@@ -490,9 +490,9 @@ void main() {
           sequence: 1,
         ),
       );
-      match.tick(.3); // the window opened and closed without contact
+      match.tick(.1); // the active window opens at 90 ms, not yet closed
       expect(match.drainHitEvents(), isEmpty);
-      match.tick(.1); // ...and the move itself ended
+      match.tick(.1); // it closed at 160 ms: the whiff is reported now
 
       final events = match.drainHitEvents();
       expect(events, hasLength(1));

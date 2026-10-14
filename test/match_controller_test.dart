@@ -538,4 +538,204 @@ void main() {
     );
     expect(c.player.health, rules.health - rules.lightAttack.damage);
   });
+
+  test('a whiff is reported once, when the active window closes', () {
+    final c = MatchController();
+    final rules = c.rules;
+    final light = rules.lightAttack;
+    skipCountdown(c);
+
+    press(c, FighterId.player, InputAction.lightPunch, 1);
+    run(c, light.startupMs + light.activeMs - rules.tickMs * 2); // ~128 ms
+    expect(c.drainHitEvents(), isEmpty, reason: 'the window is still open');
+
+    run(c, rules.tickMs * 3); // ~176 ms: the window closed at 160 ms
+    final whiffs = c.drainHitEvents();
+    expect(whiffs, hasLength(1));
+    expect(whiffs.single.kind, HitKind.whiff);
+    expect(whiffs.single.attacker, FighterId.player);
+    expect(whiffs.single.heavy, isFalse);
+
+    // The recovery still runs to its end, and no second whiff fires.
+    expect(c.player.action, FighterAction.lightPunch);
+    run(c, light.totalMs);
+    expect(c.player.action, FighterAction.idle);
+    expect(c.drainHitEvents(), isEmpty);
+
+    expect(c.rival.health, rules.health, reason: 'a whiff does no damage');
+    expect(c.rival.isStunned, isFalse, reason: 'and stuns nobody');
+  });
+
+  test('a whiff that is interrupted during recovery still gets reported', () {
+    final c = MatchController();
+    final rules = c.rules;
+    final heavy = rules.heavyAttack;
+    final slice = rules.tickMs / 1000;
+    skipCountdown(c);
+
+    // The heavy kick whiffs: the rival walks in only after its window closes.
+    press(c, FighterId.player, InputAction.heavyKick, 1);
+    final events = <HitEvent>[];
+    var rivalPunched = false;
+    var elapsedMs = 0;
+    int? hitMs;
+    for (var i = 0; i < 80; i++) {
+      if (i == 7) {
+        c.setMoveAxis(FighterId.rival, -1);
+      }
+      if (!rivalPunched &&
+          c.rival.canAct &&
+          c.distanceBetween(FighterId.player, FighterId.rival) <=
+              rules.lightAttack.reach) {
+        press(c, FighterId.rival, InputAction.lightPunch, 1);
+        rivalPunched = true;
+      }
+      c.tick(slice);
+      elapsedMs += rules.tickMs;
+      for (final event in c.drainHitEvents()) {
+        events.add(event);
+        if (event.kind == HitKind.hit && event.attacker == FighterId.rival) {
+          hitMs ??= elapsedMs;
+        }
+      }
+    }
+
+    expect(rivalPunched, isTrue, reason: 'the rival closed in and jabbed');
+    expect(hitMs, isNotNull, reason: 'the jab landed on the recovering kick');
+    expect(
+      hitMs!,
+      lessThan(heavy.totalMs),
+      reason: 'the interruption happens inside the kick recovery',
+    );
+
+    final whiffs = events
+        .where((e) => e.kind == HitKind.whiff)
+        .toList(growable: false);
+    expect(whiffs, hasLength(1), reason: 'the miss is not lost');
+    expect(whiffs.single.attacker, FighterId.player);
+    expect(
+      events.indexOf(whiffs.single),
+      lessThan(events.indexWhere((e) => e.kind == HitKind.hit)),
+      reason: 'the whiff came first, at the close of the window',
+    );
+  });
+
+  test('a swing that connects never reports a whiff', () {
+    final c = MatchController();
+    final rules = c.rules;
+    skipCountdown(c);
+    closeIn(c);
+
+    press(c, FighterId.player, InputAction.lightPunch, 1);
+    run(c, rules.lightAttack.totalMs + rules.tickMs * 10);
+
+    final events = c.drainHitEvents();
+    expect(events.where((e) => e.kind == HitKind.whiff), isEmpty);
+    expect(events.where((e) => e.kind == HitKind.hit), hasLength(1));
+  });
+
+  test('a swing never reports both a connect and a whiff', () {
+    final scenarios = <({bool close, FighterAction attack})>[
+      (close: false, attack: FighterAction.lightPunch),
+      (close: true, attack: FighterAction.lightPunch),
+      (close: false, attack: FighterAction.heavyKick),
+      (close: true, attack: FighterAction.heavyKick),
+    ];
+    for (final scenario in scenarios) {
+      final c = MatchController();
+      final rules = c.rules;
+      skipCountdown(c);
+      if (scenario.close) {
+        closeIn(c);
+      }
+      final command = scenario.attack == FighterAction.heavyKick
+          ? InputAction.heavyKick
+          : InputAction.lightPunch;
+      press(c, FighterId.player, command, 1);
+
+      final total = scenario.attack == FighterAction.heavyKick
+          ? rules.heavyAttack.totalMs
+          : rules.lightAttack.totalMs;
+      for (var t = 0; t < total + rules.tickMs * 4; t += rules.tickMs) {
+        c.tick(rules.tickMs / 1000);
+        expect(
+          c.player.attackConnected && c.player.attackWhiffed,
+          isFalse,
+          reason: '${scenario.attack} close=${scenario.close} at $t ms',
+        );
+      }
+    }
+  });
+
+  test('wouldConnect honours each attack\'s own reach', () {
+    final c = MatchController();
+    final rules = c.rules;
+    skipCountdown(c);
+
+    // Stop between the jab's reach and the kick's reach.
+    walkUntilWithin(c, FighterId.player, 52);
+    expect(
+      c.distanceBetween(FighterId.player, FighterId.rival),
+      allOf(
+        greaterThan(rules.lightAttack.reach),
+        lessThanOrEqualTo(rules.heavyAttack.reach),
+      ),
+    );
+    expect(c.wouldConnect(FighterId.player, FighterAction.heavyKick), isTrue);
+    expect(c.wouldConnect(FighterId.player, FighterAction.lightPunch), isFalse);
+    expect(
+      c.isInReach(FighterId.player),
+      isFalse,
+      reason: 'idle, so nothing is in contact range',
+    );
+  });
+
+  test('wouldConnect is false out of range and for actions with no hitbox', () {
+    final c = MatchController();
+    skipCountdown(c);
+
+    // The opening gap is past both attacks.
+    expect(c.wouldConnect(FighterId.player, FighterAction.lightPunch), isFalse);
+    expect(c.wouldConnect(FighterId.player, FighterAction.heavyKick), isFalse);
+    for (final action in [
+      FighterAction.idle,
+      FighterAction.walk,
+      FighterAction.jump,
+      FighterAction.block,
+      FighterAction.hitstun,
+      FighterAction.blockstun,
+    ]) {
+      expect(c.wouldConnect(FighterId.player, action), isFalse, reason: '$action');
+    }
+  });
+
+  test('a jab passes under an airborne target, a kick still connects', () {
+    final c = MatchController();
+    skipCountdown(c);
+    closeIn(c);
+
+    press(c, FighterId.rival, InputAction.jump, 1);
+    expect(c.rival.isAirborne, isTrue);
+    expect(c.wouldConnect(FighterId.player, FighterAction.lightPunch), isFalse);
+    expect(c.wouldConnect(FighterId.player, FighterAction.heavyKick), isTrue);
+  });
+
+  test('isInReach is true only while the swing is in contact range', () {
+    final c = MatchController();
+    final rules = c.rules;
+    skipCountdown(c);
+    closeIn(c);
+
+    press(c, FighterId.player, InputAction.lightPunch, 1);
+    run(c, rules.lightAttack.startupMs + rules.tickMs * 2);
+    expect(c.isInReach(FighterId.player), isTrue);
+    expect(
+      c.isInReach(FighterId.player),
+      c.wouldConnect(FighterId.player, c.player.action),
+      reason: 'mid-swing, isInReach is exactly wouldConnect for that swing',
+    );
+
+    run(c, rules.lightAttack.totalMs);
+    expect(c.isInReach(FighterId.player), isFalse, reason: 'swing is over');
+  });
 }
