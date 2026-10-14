@@ -52,7 +52,7 @@ Online 1v1 Arena unlocks in a later release
 
 ## Repository map
 
-- `docs/product/` — game design, player guide, controls, rules, and community documents.
+- `docs/product/` — game design, player guide, controls, rules, community documents, and the character art/prompt pack.
 - `docs/technical/` — architecture, backend plan, roadmap, and release checklist.
 - `docs/legal/` — drafts that must be completed and legally reviewed before public launch.
 - `docs/concepts/` — selected visual references for the landscape UI direction.
