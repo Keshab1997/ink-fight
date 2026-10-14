@@ -1,13 +1,18 @@
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
+import '../game/bot/bot_strategy.dart';
 import '../game/ink_fight_battle_game.dart';
 import '../game/rules/input_command.dart';
 import '../game/rules/match_rules.dart';
 import '../theme/app_theme.dart';
 
 class BotFightScreen extends StatefulWidget {
-  const BotFightScreen({super.key});
+  const BotFightScreen({super.key, this.difficulty = BotDifficulty.normal});
+
+  /// The preset the practice bot plays on; the menu hands it in, and Normal is
+  /// the default the design document asks for (GDD §8).
+  final BotDifficulty difficulty;
 
   @override
   State<BotFightScreen> createState() => _BotFightScreenState();
@@ -19,7 +24,9 @@ class _BotFightScreenState extends State<BotFightScreen> {
   @override
   void initState() {
     super.initState();
-    _game = InkFightBattleGame();
+    _game = InkFightBattleGame(
+      botProfile: BotProfile.forDifficulty(widget.difficulty),
+    );
   }
 
   @override
@@ -44,7 +51,12 @@ class _BotFightScreenState extends State<BotFightScreen> {
                 onTap: () => Navigator.of(context).pop(),
               ),
             ),
-            Positioned(top: 14, left: 72, right: 72, child: _BattleHud(game: _game)),
+            Positioned(
+              top: 14,
+              left: 72,
+              right: 72,
+              child: _BattleHud(game: _game),
+            ),
             Positioned.fill(
               child: ValueListenableBuilder<int>(
                 valueListenable: _game.hudVersion,

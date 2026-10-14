@@ -101,6 +101,16 @@ class BotProfile {
 
   /// Normal is the default preset, per the design document.
   static const BotProfile defaultProfile = normal;
+
+  /// Maps the menu's difficulty choice onto the presets above — the one place
+  /// the picker's enum meets the numbers, so a screen can never assemble its
+  /// own profile.
+  static BotProfile forDifficulty(BotDifficulty difficulty) =>
+      switch (difficulty) {
+        BotDifficulty.easy => easy,
+        BotDifficulty.normal => normal,
+        BotDifficulty.hard => hard,
+      };
 }
 
 /// Plays one side of a match — the rival, by default — through the same input
