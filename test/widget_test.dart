@@ -13,6 +13,18 @@ void main() {
     expect(find.text('SETTINGS'), findsOneWidget);
   });
 
+  testWidgets('opens the first bot fight arena', (tester) async {
+    await tester.pumpWidget(const InkFightApp());
+
+    await tester.tap(find.text('BOT FIGHT'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.text('CRIMSON RIVAL'), findsOneWidget);
+    expect(find.text('PUNCH'), findsOneWidget);
+    expect(find.text('KICK'), findsOneWidget);
+  });
+
   testWidgets('online mode explains that it is planned', (tester) async {
     await tester.pumpWidget(const InkFightApp());
 

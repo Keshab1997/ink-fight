@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/doodle_fighter_painter.dart';
+import 'bot_fight_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -131,11 +132,8 @@ class _HeroCopy extends StatelessWidget {
   final bool compact;
 
   void _showIntro(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Bot Fight arena is the next screen to build.'),
-      ),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const BotFightScreen()));
   }
 
   @override
@@ -289,11 +287,11 @@ class _ActionRail extends StatelessWidget {
             label: 'BOT FIGHT',
             caption: 'PRACTICE THE BASICS',
             icon: Icons.bolt_rounded,
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Bot Fight arena is the next screen to build.'),
-              ),
-            ),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const BotFightScreen()),
+              );
+            },
           ),
         ),
         const SizedBox(width: 8),
