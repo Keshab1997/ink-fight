@@ -94,11 +94,12 @@ void main() {
       final rival = fightersOf(game)[0];
 
       game.setPlayerMoving(true);
+      final jabReach = game.match.rules.lightAttack.reach;
       var landed = false;
       for (var i = 0; i < 400 && !landed; i++) {
         final player = game.match.stateOf(FighterId.player);
         final gap = (game.match.stateOf(FighterId.rival).x - player.x).abs();
-        if (gap > 54) {
+        if (gap > jabReach * .9) {
           game.setPlayerMoving(true);
         } else {
           game.setPlayerMoving(false);
