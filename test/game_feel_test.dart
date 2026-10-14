@@ -541,4 +541,94 @@ void main() {
       expect(match.countdownRemainingMs, match.rules.countdownMs);
     });
   });
+
+  group('whiff presentation', () {
+    test(
+      'a miss sweeps ink, leans in and settles — with no hit-stop',
+      () async {
+        final game = await loadedGame();
+        pastCountdown(game);
+        final player = playerOf(game);
+        final rules = game.match.rules;
+        double rulesXpx() =>
+            game.match.stateOf(FighterId.player).x / rules.arenaWidth * 960;
+
+        // Opening gap is 80 units, past every reach: the jab closes on air.
+        game.sendPlayerAction(InputAction.lightPunch);
+        var guard = 0;
+        while (game.whiffFxCount == 0 && guard++ < 40) {
+          tick(game, 1);
+        }
+
+        // The cue lands mid-swing, when the window closes: the streak is on
+        // screen while the fist is still out, and the clock never stopped.
+        expect(game.whiffFxCount, greaterThan(0));
+        expect(
+          game.match.stateOf(FighterId.player).action,
+          FighterAction.lightPunch,
+        );
+        expect(game.hitStopRemainingMs, 0);
+
+        // Leaning into the miss: ahead of the rules x a few frames later...
+        tick(game, 3);
+        expect(player.position.x, greaterThan(rulesXpx() + 2));
+
+        // ...and settled back once recovery runs out.
+        bool settled() =>
+            game.match.stateOf(FighterId.player).action == FighterAction.idle;
+        guard = 0;
+        while (!settled() && guard++ < 40) {
+          tick(game, 1);
+        }
+        tick(game, 3);
+        expect(player.position.x, closeTo(rulesXpx(), 1.5));
+        expect(game.whiffFxCount, 0);
+      },
+    );
+  });
+
+  group('walk-speed-driven animation', () {
+    test('a half-pushed stick plays a half-speed walk cycle', () async {
+      final game = await loadedGame();
+      pastCountdown(game);
+      final player = playerOf(game);
+
+      game.setPlayerMoveAxis(1);
+      tick(game, 3);
+      expect(player.animation!.frames, hasLength(6));
+      final full = player.animation!.frames.first.stepTime;
+
+      game.setPlayerMoveAxis(.5);
+      tick(game, 4);
+      expect(player.animation!.frames, hasLength(6)); // same cycle, rescaled
+      expect(
+        player.animation!.frames.first.stepTime,
+        closeTo(full * 2, full * .05),
+      );
+    });
+
+    test('walking away leans back and every stride puffs ink', () async {
+      final game = await loadedGame();
+      pastCountdown(game);
+
+      // The player starts left of the rival: a negative axis is a retreat.
+      game.setPlayerMoveAxis(-.5);
+      tick(game, 2);
+      expect(game.isRetreating(FighterId.player), isTrue);
+
+      game.setPlayerMoveAxis(.5);
+      tick(game, 2);
+      expect(game.isRetreating(FighterId.player), isFalse);
+
+      // A footstep puff every ~20 units: poll a full-speed walk for one.
+      game.setPlayerMoving(true);
+      var guard = 0;
+      var sawPuff = false;
+      while (guard++ < 30 && !sawPuff) {
+        tick(game, 1);
+        sawPuff = game.liveEffectCount > 0;
+      }
+      expect(sawPuff, isTrue, reason: 'a footstep puff should show');
+    });
+  });
 }

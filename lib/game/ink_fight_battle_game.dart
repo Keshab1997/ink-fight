@@ -101,6 +101,48 @@ const ui.Color _kCrimsonFleck = ui.Color(0xFFC51F3A);
 const double _kPlayerWalkStridePx = 529;
 const double _kRivalWalkStridePx = 497;
 
+/// Whiff follow-through: a swing on air sweeps an ink arc ahead of the
+/// attacker for the arc's life, and leans the sprite into the miss for the
+/// lean's life — out and visibly back, with no stop and no shake.
+const double _kWhiffArcLightMs = 160;
+const double _kWhiffArcHeavyMs = 230;
+const double _kWhiffLeanLightMs = 200;
+const double _kWhiffLeanHeavyMs = 260;
+const double _kWhiffLeanLightPx = 10;
+const double _kWhiffLeanHeavyPx = 16;
+
+/// Range legibility: the player's reach on the floor — a dashed line out to
+/// the heavy reach with a brighter tick where the jab ends.
+const int _kRangeDashCount = 6;
+const double _kRangeLineAlpha = .22;
+const double _kRangeTickAlpha = .38;
+
+/// Walk weight: the sprite chases the rules position with this time constant,
+/// and the walk cycle plays at the measured stride share — never slower than
+/// a crawl against a wall, never faster than a hair over full. Within 4% of a
+/// full stride the cycle plays at exactly full speed, so the delivered timing
+/// survives float dust.
+const double _kSpriteSpringTauMs = 80;
+const double _kWalkSpeedMinFactor = .12;
+const double _kWalkSpeedMaxFactor = 1.15;
+const double _kWalkSpeedSnap = .04;
+
+/// Retreat tell: how far back the sprite sits while walking away from the
+/// rival. A shift, never a turn — facing stays locked on.
+const double _kRetreatLeanPx = 6;
+
+/// Footstep puffs: one small burst every ~20 arena units walked, either
+/// fighter.
+const double _kFootstepUnits = 20;
+const double _kFootstepPuffMs = 120;
+
+/// Contact punch-in: on a clean hit the world nudges toward the contact
+/// point on top of the shake, decaying fast.
+const double _kPunchLightPx = 3;
+const double _kPunchLightMs = 120;
+const double _kPunchHeavyPx = 6;
+const double _kPunchHeavyMs = 160;
+
 /// The arena view: a thin Flame layer over the deterministic [MatchController].
 ///
 /// Nothing here decides what a hit does - the controller does (see
@@ -168,6 +210,8 @@ class InkFightBattleGame extends FlameGame {
   final List<_ImpactMark> _marks = <_ImpactMark>[];
   _Shake? _shake;
   _CameraPull? _pull;
+  final List<_WhiffArc> _whiffs = <_WhiffArc>[];
+  _Punch? _punch;
 
   /// Seeded so the same fight splatters the same way run to run.
   final math.Random _fxRandom = math.Random(23);
@@ -179,6 +223,45 @@ class InkFightBattleGame extends FlameGame {
     FighterId.rival: 0,
   };
 
+  /// The lean a whiffed swing left behind, per fighter; sim-timed, so a
+  /// freeze holds the pose exactly like the squash above.
+  final Map<FighterId, _WhiffLean?> _whiffLean = <FighterId, _WhiffLean?>{
+    FighterId.player: null,
+    FighterId.rival: null,
+  };
+
+  /// Where each sprite is drawn (viewport px): the spring in [_apply] chases
+  /// the rules x with [_kSpriteSpringTauMs], so starts and stops land softly.
+  final Map<FighterId, double> _displayX = <FighterId, double>{
+    FighterId.player: 0,
+    FighterId.rival: 0,
+  };
+
+  /// Last seen rules x per fighter, in arena units: the stride share, the
+  /// retreat tell and the footstep odometer all read off the frame-to-frame
+  /// delta, so walls and the pushbox slow the feet honestly.
+  final Map<FighterId, double> _prevRulesX = <FighterId, double>{
+    FighterId.player: 0,
+    FighterId.rival: 0,
+  };
+
+  /// Arena units walked since the last footstep puff, per fighter.
+  final Map<FighterId, double> _walkedUnits = <FighterId, double>{
+    FighterId.player: 0,
+    FighterId.rival: 0,
+  };
+
+  /// Whether each fighter is walking away from its opponent right now.
+  final Map<FighterId, bool> _retreating = <FighterId, bool>{
+    FighterId.player: false,
+    FighterId.rival: false,
+  };
+
+  /// Match clock at the last sync: the sim ms the last frame consumed is the
+  /// difference, exact to the tick — the stride share divides by this, never
+  /// by the wall clock, so tick slicing cannot fake the speed.
+  int _prevClockMs = 0;
+
   final Map<String, TextPainter> _countdownPainters = <String, TextPainter>{};
 
   /// Remaining hit-stop, for tests that assert the freeze directly.
@@ -189,6 +272,15 @@ class InkFightBattleGame extends FlameGame {
   /// running while the fighters are frozen (§2).
   @visibleForTesting
   int get liveEffectCount => _bursts.length + _marks.length;
+
+  /// Live whiff arcs, for tests: a miss must draw its streak.
+  @visibleForTesting
+  int get whiffFxCount => _whiffs.length;
+
+  /// Whether [id] is walking away from its opponent (the retreat tell), for
+  /// tests.
+  @visibleForTesting
+  bool isRetreating(FighterId id) => _retreating[id] ?? false;
 
   @override
   Future<void> onLoad() async {
@@ -322,6 +414,7 @@ class InkFightBattleGame extends FlameGame {
       knockdown: await recipe('knockdown', _kKnockdownStepsMs),
       victory: await cycle('victory', stepTime: .12, loop: true),
       defeat: await cycle('defeat', stepTime: .12),
+      walkBaseStepTime: walkStepTime,
     );
   }
 
@@ -407,11 +500,17 @@ class InkFightBattleGame extends FlameGame {
     _marks.clear();
     _shake = null;
     _pull = null;
+    _whiffs.clear();
+    _punch = null;
     _prevAction.clear();
     for (final id in FighterId.values) {
       _landingSquashMs[id] = 0;
+      _whiffLean[id] = null;
+      _walkedUnits[id] = 0;
+      _retreating[id] = false;
     }
-    _syncFromMatch();
+    _prevClockMs = _match.timeRemainingMs;
+    _syncFromMatch(snap: true);
   }
 
   @override
@@ -460,6 +559,15 @@ class InkFightBattleGame extends FlameGame {
           _landingSquashMs[id] = math.max(0.0, squash - simMs);
         }
       }
+      for (final id in FighterId.values) {
+        final lean = _whiffLean[id];
+        if (lean != null) {
+          lean.ageMs += simMs;
+          if (lean.ageMs >= lean.lifeMs) {
+            _whiffLean[id] = null;
+          }
+        }
+      }
       _bot.update(simDt, _match);
       _match.tick(simDt);
       _consumeHitEvents();
@@ -492,7 +600,11 @@ class InkFightBattleGame extends FlameGame {
     for (final event in _match.drainHitEvents()) {
       switch (event.kind) {
         case HitKind.whiff:
-          break; // A swing on air gets no stop and no ink (§2).
+          // Air gets no stop and no shake — but the miss still reads: an
+          // ink streak along the swing and a lean the fighter settles out
+          // of.
+          _spawnWhiff(event);
+          break;
         case HitKind.blocked:
           _hitStopMs = math.max(_hitStopMs, _kHitStopBlockedMs);
           // The restrained mark, no burst (§3).
@@ -515,6 +627,11 @@ class InkFightBattleGame extends FlameGame {
           _pull = _CameraPull(
             ampPx: event.heavy ? _kPullHeavyPx : _kPullLightPx,
             lifeMs: event.heavy ? _kPullHeavyMs : _kPullLightMs,
+            center: _contactPoint(event),
+          );
+          _punch = _Punch(
+            ampPx: event.heavy ? _kPunchHeavyPx : _kPunchLightPx,
+            lifeMs: event.heavy ? _kPunchHeavyMs : _kPunchLightMs,
             center: _contactPoint(event),
           );
       }
@@ -596,6 +713,63 @@ class InkFightBattleGame extends FlameGame {
     _bursts.add(_Burst(blobs: blobs, lifeMs: _kPuffMs));
   }
 
+  /// A swing on air: an ink streak swept ahead of the attacker plus the
+  /// lean the sprite settles out of.
+  void _spawnWhiff(HitEvent event) {
+    final component = event.attacker == FighterId.player ? _player : _rival;
+    if (component == null) {
+      return;
+    }
+    _whiffs.add(
+      _WhiffArc(
+        origin: ui.Offset(
+          component.position.x,
+          _baselineY - _fighterHeight() * (.121 + .43),
+        ),
+        facing: _match.stateOf(event.attacker).facing,
+        heavy: event.heavy,
+        lifeMs: event.heavy ? _kWhiffArcHeavyMs : _kWhiffArcLightMs,
+      ),
+    );
+    _whiffLean[event.attacker] = _WhiffLean(
+      ampPx: event.heavy ? _kWhiffLeanHeavyPx : _kWhiffLeanLightPx,
+      lifeMs: event.heavy ? _kWhiffLeanHeavyMs : _kWhiffLeanLightMs,
+    );
+  }
+
+  /// Footstep puff: a smaller cousin of the landing puff, kicked up every
+  /// [_kFootstepUnits] walked.
+  void _spawnFootstepPuff(double feetX) {
+    final feet = ui.Offset(feetX, _baselineY - _fighterHeight() * .121);
+    final blobs = <_Blob>[];
+    for (var i = 0; i < 3; i++) {
+      final outward = i.isEven ? -1.0 : 1.0;
+      blobs.add(
+        _Blob(
+          x: feet.dx,
+          y: feet.dy,
+          vx: outward * (20 + 30 * _fxRandom.nextDouble()),
+          vy: -(8 + 18 * _fxRandom.nextDouble()),
+          r: 2.5 + 3 * _fxRandom.nextDouble(),
+        ),
+      );
+    }
+    _bursts.add(_Burst(blobs: blobs, lifeMs: _kFootstepPuffMs));
+  }
+
+  /// Rescales the walk cycle to [factor] of its delivered speed by rewriting
+  /// the per-frame holds in place: the ticker keeps running, so the feet
+  /// change pace without popping. Factor 1 restores the art's own timing.
+  void _setWalkSpeed(_FighterAnims anims, double factor) {
+    final want = anims.walkBaseStepTime / factor;
+    if ((anims.walk.frames.first.stepTime - want).abs() < 1e-9) {
+      return;
+    }
+    for (final frame in anims.walk.frames) {
+      frame.stepTime = want;
+    }
+  }
+
   void _updateEffects(double dt) {
     if (dt <= 0) {
       return;
@@ -627,16 +801,35 @@ class InkFightBattleGame extends FlameGame {
         _pull = null;
       }
     }
+    for (final whiff in _whiffs) {
+      whiff.ageMs += ms;
+    }
+    _whiffs.removeWhere((whiff) => whiff.ageMs >= whiff.lifeMs);
+    final punch = _punch;
+    if (punch != null) {
+      punch.ageMs += ms;
+      if (punch.ageMs >= punch.lifeMs) {
+        _punch = null;
+      }
+    }
   }
 
-  void _syncFromMatch() {
+  void _syncFromMatch({bool snap = false}) {
     if (!_loaded || _player == null || _rival == null) {
       return;
     }
     final player = _match.stateOf(FighterId.player);
     final rival = _match.stateOf(FighterId.rival);
-    _apply(_player!, _playerAnims!, player);
-    _apply(_rival!, _rivalAnims!, rival);
+    // Exact sim ms this frame consumed (0 on a snap): the spring and the
+    // stride share divide by this, never by the wall clock.
+    var consumedMs = 0.0;
+    if (!snap) {
+      final used = _prevClockMs - _match.timeRemainingMs;
+      consumedMs = used.clamp(0, 1 << 30).toDouble();
+    }
+    _apply(_player!, _playerAnims!, player, consumedMs, snap);
+    _apply(_rival!, _rivalAnims!, rival, consumedMs, snap);
+    _prevClockMs = _match.timeRemainingMs;
 
     final snapshot = Object.hash(
       player.health,
@@ -655,11 +848,66 @@ class InkFightBattleGame extends FlameGame {
     SpriteAnimationComponent component,
     _FighterAnims anims,
     FighterState state,
+    double consumedMs,
+    bool snap,
   ) {
     final prevAction = _prevAction[state.id];
     _prevAction[state.id] = state.action;
 
-    component.position.x = state.x / _match.rules.arenaWidth * size.x;
+    final rules = _match.rules;
+    final targetX = state.x / rules.arenaWidth * size.x;
+    // Rules units travelled since the last sync: 0 on a snap, so a resize
+    // or a restart never reads as a sprint.
+    final dxUnits = snap ? 0.0 : state.x - (_prevRulesX[state.id] ?? state.x);
+    _prevRulesX[state.id] = state.x;
+
+    // Weight without lying: the drawn x eases toward the rules x with a
+    // short spring, so starts and stops land softly. The simulation stays
+    // authoritative — this value is never read back — and a freeze holds
+    // it, because this whole method only runs on sim time.
+    var baseX = _displayX[state.id] ?? targetX;
+    if (snap) {
+      baseX = targetX;
+    } else if (consumedMs > 0) {
+      final give = 1 - math.exp(-consumedMs / _kSpriteSpringTauMs);
+      baseX += (targetX - baseX) * give;
+    }
+    _displayX[state.id] = baseX;
+
+    if (state.action == FighterAction.walk && !snap && consumedMs > 0) {
+      // The walk that reads as walking: the cycle plays at the measured
+      // stride share — half-pushed stick, half-speed feet, no skating.
+      var factor = dxUnits.abs() / consumedMs * 1000 / rules.walkSpeed;
+      if ((factor - 1).abs() < _kWalkSpeedSnap) {
+        factor = 1;
+      }
+      factor = factor.clamp(_kWalkSpeedMinFactor, _kWalkSpeedMaxFactor);
+      _setWalkSpeed(anims, factor);
+      // Retreat tell: moving away from the rival sits the sprite back a few
+      // pixels. A shift, never a turn.
+      _retreating[state.id] = dxUnits * state.facing < 0;
+      _walkedUnits[state.id] = (_walkedUnits[state.id] ?? 0) + dxUnits.abs();
+      while ((_walkedUnits[state.id] ?? 0) >= _kFootstepUnits) {
+        _walkedUnits[state.id] = _walkedUnits[state.id]! - _kFootstepUnits;
+        _spawnFootstepPuff(baseX);
+      }
+    } else if (state.action != FighterAction.walk) {
+      _setWalkSpeed(anims, 1);
+      _retreating[state.id] = false;
+    }
+
+    // Pose offsets compose on the sprung base: the whiff lean throws the
+    // sprite forward and settles back, the retreat tell sits it back.
+    var x = baseX;
+    if (_retreating[state.id] ?? false) {
+      x -= state.facing * _kRetreatLeanPx;
+    }
+    final lean = _whiffLean[state.id];
+    if (lean != null) {
+      final t = (lean.ageMs / lean.lifeMs).clamp(0.0, 1.0);
+      x += state.facing * lean.ampPx * math.sin(math.pi * t);
+    }
+    component.position.x = x;
     // Frames are drawn facing right; `facing` mirrors whoever stands right.
     component.scale.x = state.facing;
 
@@ -743,7 +991,7 @@ class InkFightBattleGame extends FlameGame {
       painter.dispose();
     }
     _countdownPainters.clear();
-    _syncFromMatch();
+    _syncFromMatch(snap: true);
   }
 
   @override
@@ -779,6 +1027,7 @@ class InkFightBattleGame extends FlameGame {
       ),
       arenaLine,
     );
+    _renderRangeMarker(canvas, floor);
 
     super.render(canvas);
     // The ink draws over the fighters — the impact is the loudest thing on
@@ -789,6 +1038,45 @@ class InkFightBattleGame extends FlameGame {
     canvas.restore();
 
     _renderCountdown(canvas);
+  }
+
+  /// Range legibility: the player's own reach drawn on the floor — a dashed
+  /// line out to the heavy reach with a brighter tick where the jab ends,
+  /// following the sprite as the fighters move. Read off the rules table
+  /// every frame (the fields, never a copy), so a balance pass moves the
+  /// marker with the numbers.
+  void _renderRangeMarker(ui.Canvas canvas, double floor) {
+    final player = _player;
+    if (!_loaded || player == null) {
+      return;
+    }
+    final rules = _match.rules;
+    final facing = _match.stateOf(FighterId.player).facing;
+    final pxPerUnit = size.x / rules.arenaWidth;
+    final fromX = player.position.x;
+    final heavyPx = rules.heavyAttack.reach * pxPerUnit;
+
+    final line = ui.Paint()
+      ..color = InkColors.ink.withValues(alpha: _kRangeLineAlpha)
+      ..strokeWidth = 2
+      ..strokeCap = ui.StrokeCap.round;
+    final span = heavyPx / _kRangeDashCount;
+    for (var i = 0; i < _kRangeDashCount; i++) {
+      final a = fromX + facing * span * (i + .1);
+      final b = fromX + facing * span * (i + .65);
+      canvas.drawLine(ui.Offset(a, floor), ui.Offset(b, floor), line);
+    }
+
+    final tick = ui.Paint()
+      ..color = InkColors.ink.withValues(alpha: _kRangeTickAlpha)
+      ..strokeWidth = 2.5
+      ..strokeCap = ui.StrokeCap.round;
+    final jabX = fromX + facing * rules.lightAttack.reach * pxPerUnit;
+    canvas.drawLine(
+      ui.Offset(jabX, floor - 5),
+      ui.Offset(jabX, floor + 5),
+      tick,
+    );
   }
 
   /// §3 shake and camera response, applied to the world only. The HUD is a
@@ -803,6 +1091,18 @@ class InkFightBattleGame extends FlameGame {
       canvas.translate(pull.center.dx, pull.center.dy);
       canvas.scale(scale, scale);
       canvas.translate(-pull.center.dx, -pull.center.dy);
+    }
+    final punch = _punch;
+    if (punch != null) {
+      final t = (punch.ageMs / punch.lifeMs).clamp(0.0, 1.0);
+      final dx = punch.center.dx - size.x / 2;
+      final dy = punch.center.dy - size.y / 2;
+      final len = math.sqrt(dx * dx + dy * dy);
+      if (len > 1) {
+        // Toward the contact point, decaying fast: a nudge, not a zoom.
+        final push = punch.ampPx * (1 - t) * (1 - t);
+        canvas.translate(dx / len * push, dy / len * push);
+      }
     }
     final shake = _shake;
     if (shake != null) {
@@ -823,6 +1123,27 @@ class InkFightBattleGame extends FlameGame {
         canvas.drawCircle(
           ui.Offset(blob.x, blob.y),
           blob.r * (.65 + .35 * fade),
+          paint,
+        );
+      }
+    }
+    for (final whiff in _whiffs) {
+      final t = (whiff.ageMs / whiff.lifeMs).clamp(0.0, 1.0);
+      final paint = ui.Paint()
+        ..color = InkColors.ink.withValues(alpha: (1 - t) * .55)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = whiff.heavy ? 7 : 5
+        ..strokeCap = ui.StrokeCap.round;
+      // The streak sweeps forward along the swing as it fades.
+      final mid = whiff.facing > 0 ? 0.0 : math.pi;
+      final sweep = .4 + 1.4 * t;
+      for (var i = 0; i < 3; i++) {
+        final r = (whiff.heavy ? 44.0 : 32.0) + i * 14 + t * 46;
+        canvas.drawArc(
+          ui.Rect.fromCircle(center: whiff.origin, radius: r),
+          mid - sweep / 2,
+          sweep,
+          false,
           paint,
         );
       }
@@ -925,6 +1246,7 @@ class _FighterAnims {
     required this.knockdown,
     required this.victory,
     required this.defeat,
+    required this.walkBaseStepTime,
   });
 
   final SpriteAnimation idle;
@@ -946,6 +1268,10 @@ class _FighterAnims {
 
   final SpriteAnimation victory;
   final SpriteAnimation defeat;
+
+  /// The walk cycle's delivered per-frame hold at full stride: rescaling
+  /// divides this, so factor 1 is always the art's own timing.
+  final double walkBaseStepTime;
 
   SpriteAnimation forAction(FighterAction action) => switch (action) {
     FighterAction.idle => idle,
@@ -1019,6 +1345,46 @@ class _CameraPull {
     required this.lifeMs,
     required this.center,
   });
+
+  final double ampPx;
+  final double lifeMs;
+  final ui.Offset center;
+  double ageMs = 0;
+}
+
+/// The ink streak a whiffed swing sweeps ahead of the attacker.
+class _WhiffArc {
+  _WhiffArc({
+    required this.origin,
+    required this.facing,
+    required this.heavy,
+    required this.lifeMs,
+  });
+
+  /// Chest height over the attacker's sprite, in viewport pixels.
+  final ui.Offset origin;
+
+  /// 1 the swing went right, -1 it went left.
+  final double facing;
+  final bool heavy;
+  final double lifeMs;
+  double ageMs = 0;
+}
+
+/// The over-commit lean a whiff leaves on the attacker's sprite: forward and
+/// visibly back over [lifeMs], peaking [ampPx] ahead.
+class _WhiffLean {
+  _WhiffLean({required this.ampPx, required this.lifeMs});
+
+  final double ampPx;
+  final double lifeMs;
+  double ageMs = 0;
+}
+
+/// The contact punch-in: a brief nudge of the world toward the contact
+/// point, on top of the shake.
+class _Punch {
+  _Punch({required this.ampPx, required this.lifeMs, required this.center});
 
   final double ampPx;
   final double lifeMs;
