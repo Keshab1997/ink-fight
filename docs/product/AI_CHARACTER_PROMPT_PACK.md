@@ -114,6 +114,39 @@ The following action descriptions are appended one at a time to the universal fr
 - `defeat_003`: quiet recovery motion, no violent or graphic detail.
 - `defeat_004`: final defeated result pose, suitable for a general mobile game.
 
+### Hurt heavy — 4 frames (knockback that travels) — `hurt_heavy`
+
+Added after playtesting feedback that a hit does not read as one: the fight has
+a single 3-frame `hurt` cycle for every hit, so a jab and a heavy kick look
+identical and nothing shows the player being *driven backward*. The art bible
+already reserved this animation under the name `hit_heavy` (online polish set);
+this is it, promoted because the feel needs it now.
+
+Both characters are drawn **facing RIGHT**, so "knocked backward" means the body
+is thrown toward the **LEFT** of the canvas while the opponent stands to the
+right. The cycle must read as movement across these four frames, not as four
+poses: the arms and the head lead, the feet catch up.
+
+- `hurt_heavy_000` — impact: head snapped back with the chin tucked, both fists blown up and out of the guard, weight already travelling backward.
+- `hurt_heavy_001` — maximum recoil: torso furthest back, front foot sliding backward, back knee bent deep under the force, scarf whipped forward past the face.
+- `hurt_heavy_002` — the skid: feet planted wide apart mid-slide, body still leaning back, both arms flailing outward to catch balance, face coming back up.
+- `hurt_heavy_003` — recovering: centred again with weight settling, arms returning toward guard. This is the frame the player sees when control comes back, so it must read as ready, not as a second stagger.
+
+Append to the universal frame prompt (section 4) for every one of the four:
+
+```text
+The character still faces RIGHT exactly as in the reference — his face and both fists point toward the right side of the canvas, and the blow is driving him toward the left of the canvas. Do not mirror, flip or turn the character. Both feet stay on the ground: this is a ground slide, never a launch into the air. No dizzy stars, no asterisks, no sparkles, no impact marks and no motion lines around the head — the game draws its own hit effects on top of these frames.
+```
+
+**Facing lock (learned the hard way).** A first demo of this cycle came back
+with the rival's crimson mask on the *left* of his head — the whole character
+mirrored — even though the prompt said "faces RIGHT, hit from the right". It is
+an easy mistake for an otherwise good recoil pose, so it is checked, not
+trusted: for the bot, measure the crimson accent centroid against the drawing's
+centre; for the player, look at which side the face and the leading fist are on.
+A mirrored frame is unusable — in-game the rival is mirrored again to face the
+player, and a flipped frame leaves him punching backwards.
+
 ## 6. Negative constraints
 
 Append this when the model supports a negative prompt or include it in the main prompt:
