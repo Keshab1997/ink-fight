@@ -30,8 +30,8 @@ class _LandscapeHome extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 980;
-        final horizontalPadding = compact ? 24.0 : 52.0;
+        final compact = constraints.maxWidth < 900;
+        final padding = compact ? 16.0 : 34.0;
 
         return Stack(
           children: [
@@ -41,33 +41,23 @@ class _LandscapeHome extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                24,
-                horizontalPadding,
-                18,
-              ),
+              padding: EdgeInsets.fromLTRB(padding, 14, padding, 12),
               child: Column(
                 children: [
-                  const _TopBar(),
-                  const SizedBox(height: 18),
+                  _Header(compact: compact),
+                  SizedBox(height: compact ? 10 : 16),
                   Expanded(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SizedBox(
-                          width: compact ? 290 : 360,
-                          child: const SingleChildScrollView(
-                            child: _MenuPanel(),
-                          ),
-                        ),
-                        SizedBox(width: compact ? 24 : 48),
-                        const Expanded(child: _ArenaPreview()),
+                        Expanded(flex: 3, child: _HeroCopy(compact: compact)),
+                        SizedBox(width: compact ? 14 : 28),
+                        const Expanded(flex: 5, child: _ArenaPreview()),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  const _FooterMeta(),
+                  SizedBox(height: compact ? 10 : 14),
+                  _ActionRail(compact: compact),
                 ],
               ),
             ),
@@ -78,50 +68,187 @@ class _LandscapeHome extends StatelessWidget {
   }
 }
 
-class _TopBar extends StatelessWidget {
-  const _TopBar();
+class _Header extends StatelessWidget {
+  const _Header({required this.compact});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Container(
-          width: 42,
-          height: 42,
+          width: compact ? 36 : 42,
+          height: compact ? 36 : 42,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: InkColors.ink,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(11),
           ),
           child: const Text(
             'IF',
             style: TextStyle(
               color: InkColors.white,
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.w900,
               letterSpacing: -1,
             ),
           ),
         ),
+        const SizedBox(width: 10),
+        Text(
+          'INK FIGHT',
+          style: TextStyle(
+            color: InkColors.ink,
+            fontSize: compact ? 20 : 24,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -1.2,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Container(width: 1, height: 22, color: InkColors.line),
         const SizedBox(width: 12),
         const Text(
-          'KESHAB STUDIOS',
+          'DOODLE COMBAT',
           style: TextStyle(
-            color: InkColors.inkSoft,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 2.2,
+            color: InkColors.muted,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.8,
           ),
         ),
         const Spacer(),
-        const _StatusPill(icon: Icons.circle, label: 'LOCAL BUILD / 001'),
+        if (!compact)
+          const _StatusPill(icon: Icons.circle, label: 'LOCAL BUILD / 001'),
       ],
     );
   }
 }
 
-class _MenuPanel extends StatelessWidget {
-  const _MenuPanel();
+class _HeroCopy extends StatelessWidget {
+  const _HeroCopy({required this.compact});
+
+  final bool compact;
+
+  void _showIntro(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Bot Fight arena is the next screen to build.'),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _Eyebrow(label: '01 / TRAINING GROUNDS'),
+          SizedBox(height: compact ? 10 : 16),
+          Text(
+            'DRAW.\nFIGHT.\nDOMINATE.',
+            style: TextStyle(
+              color: InkColors.ink,
+              fontSize: compact ? 31 : 42,
+              height: .89,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -2.4,
+            ),
+          ),
+          SizedBox(height: compact ? 10 : 14),
+          Text(
+            'A clean line. A sharp hit.\nOwn the page.',
+            style: TextStyle(
+              color: InkColors.muted,
+              fontSize: compact ? 12 : 14,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: compact ? 14 : 20),
+          InkWell(
+            onTap: () => _showIntro(context),
+            borderRadius: BorderRadius.circular(99),
+            child: const _ReadyBadge(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArenaPreview extends StatelessWidget {
+  const _ArenaPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: InkColors.paperDeep.withValues(alpha: .68),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: InkColors.line),
+      ),
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: CustomPaint(painter: ArenaTexturePainter()),
+          ),
+          const Positioned(
+            top: 16,
+            left: 18,
+            child: _Tag(label: 'BOT FIGHT / PRACTICE'),
+          ),
+          const Positioned(top: 16, right: 18, child: _Tag(label: '01 : 00')),
+          const Positioned.fill(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(14, 24, 14, 42),
+              child: CustomPaint(painter: DoodleFightersPainter()),
+            ),
+          ),
+          Positioned(
+            left: 18,
+            right: 18,
+            bottom: 14,
+            child: Row(
+              children: [
+                const Expanded(child: _HealthLine(label: 'YOU', value: .82)),
+                const SizedBox(width: 12),
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: InkColors.ink,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Text(
+                    'VS',
+                    style: TextStyle(
+                      color: InkColors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(child: _HealthLine(label: 'BOT', value: .64)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionRail extends StatelessWidget {
+  const _ActionRail({required this.compact});
+
+  final bool compact;
 
   void _showComingSoon(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -154,213 +281,41 @@ class _MenuPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        const SizedBox(height: 12),
-        const Text(
-          'THE ARENA',
-          style: TextStyle(
-            color: InkColors.muted,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 2.4,
-          ),
-        ),
-        const SizedBox(height: 14),
-        const Text(
-          'INK\nFIGHT',
-          style: TextStyle(
-            color: InkColors.ink,
-            fontSize: 56,
-            height: .88,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -3.6,
-          ),
-        ),
-        const SizedBox(height: 12),
-        const Text(
-          'Doodle Combat',
-          style: TextStyle(
-            color: InkColors.inkSoft,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            letterSpacing: .2,
-          ),
-        ),
-        const SizedBox(height: 14),
-        const Text(
-          'A clean line. A sharp hit.\nOwn the page.',
-          style: TextStyle(
-            color: InkColors.muted,
-            fontSize: 14,
-            height: 1.45,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 26),
-        _ActionButton(
-          label: 'BOT FIGHT',
-          caption: 'PRACTICE THE BASICS',
-          icon: Icons.bolt_rounded,
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
+        Expanded(
+          flex: 5,
+          child: _ActionButton(
+            label: 'BOT FIGHT',
+            caption: 'PRACTICE THE BASICS',
+            icon: Icons.bolt_rounded,
+            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Bot Fight arena is the next screen to build.'),
               ),
-            );
-          },
-        ),
-        const SizedBox(height: 10),
-        _ActionButton(
-          label: 'ONLINE 1V1',
-          caption: 'COMING IN A LATER BUILD',
-          icon: Icons.lock_outline_rounded,
-          locked: true,
-          onTap: () => _showComingSoon(context),
-        ),
-        const SizedBox(height: 10),
-        _ActionButton(
-          label: 'SETTINGS',
-          caption: 'AUDIO / HAPTICS / HELP',
-          icon: Icons.tune_rounded,
-          compact: true,
-          onTap: () => _showSettings(context),
-        ),
-        const SizedBox(height: 20),
-        Row(
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: InkColors.ink,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 9),
-            const Text(
-              'BOT MODE READY',
-              style: TextStyle(
-                color: InkColors.inkSoft,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.3,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _ArenaPreview extends StatelessWidget {
-  const _ArenaPreview();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: InkColors.paperDeep.withValues(alpha: .58),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: InkColors.line),
-      ),
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: CustomPaint(painter: ArenaTexturePainter()),
-          ),
-          Positioned(
-            top: 22,
-            left: 24,
-            child: _Tag(label: 'BOT FIGHT / PRACTICE'),
-          ),
-          const Positioned(top: 22, right: 24, child: _Tag(label: '01 : 00')),
-          const Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(26, 62, 26, 56),
-              child: CustomPaint(painter: DoodleFightersPainter()),
             ),
           ),
-          Positioned(
-            left: 26,
-            right: 26,
-            bottom: 20,
-            child: Row(
-              children: [
-                const Expanded(child: _HealthLine(label: 'YOU', value: .82)),
-                const SizedBox(width: 18),
-                Container(
-                  width: 30,
-                  height: 30,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: InkColors.ink,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text(
-                    'VS',
-                    style: TextStyle(
-                      color: InkColors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 18),
-                const Expanded(child: _HealthLine(label: 'BOT', value: .64)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HealthLine extends StatelessWidget {
-  const _HealthLine({required this.label, required this.value});
-
-  final String label;
-  final double value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: InkColors.inkSoft,
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.6,
-              ),
-            ),
-            Text(
-              '${(value * 100).round()}%',
-              style: const TextStyle(
-                color: InkColors.muted,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
         ),
-        const SizedBox(height: 7),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(99),
-          child: LinearProgressIndicator(
-            minHeight: 6,
-            value: value,
-            backgroundColor: InkColors.white.withValues(alpha: .72),
-            color: InkColors.ink,
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 4,
+          child: _ActionButton(
+            label: 'ONLINE 1V1',
+            caption: 'COMING SOON',
+            icon: Icons.lock_outline_rounded,
+            locked: true,
+            onTap: () => _showComingSoon(context),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 3,
+          child: _ActionButton(
+            label: 'SETTINGS',
+            caption: 'AUDIO / HELP',
+            icon: Icons.tune_rounded,
+            compact: compact,
+            onTap: () => _showSettings(context),
           ),
         ),
       ],
@@ -387,32 +342,28 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final background = compact
-        ? InkColors.white.withValues(alpha: .35)
-        : locked
-        ? InkColors.paperDeep.withValues(alpha: .8)
+    final background = locked
+        ? InkColors.paperDeep.withValues(alpha: .92)
         : InkColors.ink;
-    final foreground = compact || locked ? InkColors.inkSoft : InkColors.white;
+    final foreground = locked ? InkColors.inkSoft : InkColors.white;
 
     return Material(
       color: background,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          height: compact ? 50 : 58,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          height: compact ? 52 : 58,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 11 : 15),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: compact || locked ? InkColors.line : InkColors.ink,
-            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: locked ? InkColors.line : InkColors.ink),
           ),
           child: Row(
             children: [
-              Icon(icon, color: foreground, size: compact ? 18 : 20),
-              const SizedBox(width: 12),
+              Icon(icon, color: foreground, size: compact ? 17 : 20),
+              SizedBox(width: compact ? 7 : 10),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -420,22 +371,26 @@ class _ActionButton extends StatelessWidget {
                   children: [
                     Text(
                       label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: foreground,
-                        fontSize: 13,
+                        fontSize: compact ? 10 : 12,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 1.1,
+                        letterSpacing: compact ? .7 : 1,
                       ),
                     ),
                     if (!compact) ...[
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 2),
                       Text(
                         caption,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: foreground.withValues(alpha: .62),
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: .7,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: .6,
                         ),
                       ),
                     ],
@@ -444,12 +399,111 @@ class _ActionButton extends StatelessWidget {
               ),
               Icon(
                 Icons.arrow_forward_rounded,
-                color: foreground.withValues(alpha: compact ? .7 : .9),
-                size: 18,
+                color: foreground.withValues(alpha: .7),
+                size: 16,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _HealthLine extends StatelessWidget {
+  const _HealthLine({required this.label, required this.value});
+
+  final String label;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: InkColors.inkSoft,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.4,
+              ),
+            ),
+            Text(
+              '${(value * 100).round()}%',
+              style: const TextStyle(
+                color: InkColors.muted,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(
+            minHeight: 5,
+            value: value,
+            backgroundColor: InkColors.white.withValues(alpha: .72),
+            color: InkColors.ink,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReadyBadge extends StatelessWidget {
+  const _ReadyBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: InkColors.white.withValues(alpha: .58),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: InkColors.line),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.circle, color: InkColors.ink, size: 8),
+          SizedBox(width: 8),
+          Text(
+            'BOT MODE READY',
+            style: TextStyle(
+              color: InkColors.inkSoft,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Eyebrow extends StatelessWidget {
+  const _Eyebrow({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: InkColors.muted,
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 2,
       ),
     );
   }
@@ -464,19 +518,19 @@ class _Tag extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: InkColors.white.withValues(alpha: .66),
+        color: InkColors.white.withValues(alpha: .72),
         borderRadius: BorderRadius.circular(99),
         border: Border.all(color: InkColors.line),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Text(
           label,
           style: const TextStyle(
             color: InkColors.inkSoft,
-            fontSize: 9,
+            fontSize: 8,
             fontWeight: FontWeight.w900,
-            letterSpacing: 1.1,
+            letterSpacing: .9,
           ),
         ),
       ),
@@ -493,7 +547,7 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
         color: InkColors.white.withValues(alpha: .55),
         borderRadius: BorderRadius.circular(99),
@@ -502,50 +556,19 @@ class _StatusPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: InkColors.ink, size: 9),
-          const SizedBox(width: 8),
+          Icon(icon, color: InkColors.ink, size: 8),
+          const SizedBox(width: 7),
           Text(
             label,
             style: const TextStyle(
               color: InkColors.inkSoft,
-              fontSize: 9,
+              fontSize: 8,
               fontWeight: FontWeight.w900,
-              letterSpacing: 1.1,
+              letterSpacing: .9,
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _FooterMeta extends StatelessWidget {
-  const _FooterMeta();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Text(
-          'PREMIUM MONOCHROME COMBAT',
-          style: TextStyle(
-            color: InkColors.muted,
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.4,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          'LANDSCAPE  •  60 FPS TARGET  •  ONLINE 1V1 SOON',
-          style: TextStyle(
-            color: InkColors.muted.withValues(alpha: .84),
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.05,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -583,9 +606,9 @@ class PaperGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final linePaint = Paint()
-      ..color = InkColors.line.withValues(alpha: .23)
+      ..color = InkColors.line.withValues(alpha: .2)
       ..strokeWidth = 1;
-    final dotPaint = Paint()..color = InkColors.line.withValues(alpha: .36);
+    final dotPaint = Paint()..color = InkColors.line.withValues(alpha: .34);
 
     for (double x = 0; x < size.width; x += 48) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint);
@@ -610,25 +633,25 @@ class ArenaTexturePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final ink = Paint()
-      ..color = InkColors.ink.withValues(alpha: .06)
+      ..color = InkColors.ink.withValues(alpha: .08)
       ..strokeWidth = 1.2
       ..style = PaintingStyle.stroke;
-    final horizon = size.height * .72;
+    final horizon = size.height * .75;
 
     canvas.drawLine(Offset(0, horizon), Offset(size.width, horizon), ink);
     canvas.drawOval(
       Rect.fromCenter(
         center: Offset(size.width / 2, horizon),
-        width: size.width * .48,
-        height: size.height * .18,
+        width: size.width * .56,
+        height: size.height * .2,
       ),
       ink,
     );
-    for (var i = 0; i < 7; i++) {
-      final x = size.width * (.08 + i * .14);
+    for (var i = 0; i < 8; i++) {
+      final x = size.width * (.04 + i * .14);
       canvas.drawLine(
         Offset(x, horizon),
-        Offset(size.width / 2 + (x - size.width / 2) * .48, size.height),
+        Offset(size.width / 2 + (x - size.width / 2) * .45, size.height),
         ink,
       );
     }
