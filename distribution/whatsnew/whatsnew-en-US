@@ -1,1 +1,3 @@
 Internal testing build with the latest changes. Please try the app and share any issues or feedback with the team.
+
+Bot fight slice: the training arena opens straight from the menu, and the two fighters hold the floor line on a four-frame idle. Settings now has its own screen, reachable from the menu or a direct link. Sound and haptics controls, and the first exchange that actually lands, are next.

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,6 +12,15 @@ Future<void> main() async {
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
+
+  // Immersive landscape: the fight owns the whole sheet of paper, and the
+  // status bar only comes back when the player swipes for it. Skipped on web,
+  // where there is no status bar to hide and the browser owns the chrome --
+  // calling SystemChrome there is noise in the console, not a visual change.
+  if (!kIsWeb) {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
   runApp(const InkFightApp());
 }
 
