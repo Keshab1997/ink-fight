@@ -34,6 +34,9 @@ void main() {
 
     expect(player.animation, isNotNull);
     expect(rival.animation, isNotNull);
+    // The idle cycle breathes over the four delivered frames.
+    expect(player.animation!.frames, hasLength(4));
+    expect(rival.animation!.frames, hasLength(4));
 
     // Rival is mirrored to face the player, who stands on the left.
     expect(rival.scale.x, -1);

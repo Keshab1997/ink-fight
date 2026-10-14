@@ -10,6 +10,12 @@ import '../theme/app_theme.dart';
 class InkFightBattleGame extends FlameGame {
   static const _playerIdlePath =
       'assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_000.png';
+  static const _playerIdleFrames = [
+    _playerIdlePath,
+    'assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_001.png',
+    'assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_002.png',
+    'assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_003.png',
+  ];
   static const _playerPunchPath =
       'assets/characters/runtime/player_ink_fighter/light_punch/player_ink_fighter_light_punch_002.png';
   static const _playerKickPath =
@@ -20,6 +26,12 @@ class InkFightBattleGame extends FlameGame {
       'assets/characters/runtime/player_ink_fighter/jump/player_ink_fighter_jump_002.png';
   static const _rivalIdlePath =
       'assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_000.png';
+  static const _rivalIdleFrames = [
+    _rivalIdlePath,
+    'assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_001.png',
+    'assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_002.png',
+    'assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_003.png',
+  ];
 
   SpriteAnimationComponent? _player;
   SpriteAnimationComponent? _rival;
@@ -35,7 +47,7 @@ class InkFightBattleGame extends FlameGame {
     await super.onLoad();
     images.prefix = '';
 
-    _playerIdle = await _loadAnimation([_playerIdlePath], stepTime: 1);
+    _playerIdle = await _loadAnimation(_playerIdleFrames, stepTime: .14);
     _playerPunch = await _loadAnimation(
       [_playerIdlePath, _playerPunchPath, _playerIdlePath],
       stepTime: .16,
@@ -57,7 +69,7 @@ class InkFightBattleGame extends FlameGame {
       loop: false,
     );
 
-    final rivalIdle = await _loadAnimation([_rivalIdlePath], stepTime: 1);
+    final rivalIdle = await _loadAnimation(_rivalIdleFrames, stepTime: .14);
 
     // Flame requires an explicit size when autoResize is off; _layout()
     // below replaces this placeholder with the real arena dimensions.
