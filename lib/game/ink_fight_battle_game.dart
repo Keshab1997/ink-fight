@@ -1,45 +1,41 @@
-import 'dart:async' as async;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import 'bot/bot_strategy.dart';
+import 'rules/fighter_state.dart';
+import 'rules/input_command.dart';
+import 'rules/match_controller.dart';
+import 'rules/match_rules.dart';
 
+/// The arena view: a thin Flame layer over the deterministic [MatchController].
+///
+/// Nothing here decides what a hit does - the controller does (see
+/// `rules/match_controller.dart`). This file only turns fighter states into
+/// sprites: positions along the arena line, mirrored facings, the animation
+/// that matches the current action, and the jump arc. Frames are discovered
+/// from the asset manifest, so a new batch from the art pipeline is picked up
+/// without touching this file.
 class InkFightBattleGame extends FlameGame {
-  static const _playerIdlePath =
-      'assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_000.png';
-  static const _playerIdleFrames = [
-    _playerIdlePath,
-    'assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_001.png',
-    'assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_002.png',
-    'assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_003.png',
-  ];
-  static const _playerPunchPath =
-      'assets/characters/runtime/player_ink_fighter/light_punch/player_ink_fighter_light_punch_002.png';
-  static const _playerKickPath =
-      'assets/characters/runtime/player_ink_fighter/heavy_kick/player_ink_fighter_heavy_kick_003.png';
-  static const _playerBlockPath =
-      'assets/characters/runtime/player_ink_fighter/block/player_ink_fighter_block_001.png';
-  static const _playerJumpPath =
-      'assets/characters/runtime/player_ink_fighter/jump/player_ink_fighter_jump_002.png';
-  static const _rivalIdlePath =
-      'assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_000.png';
-  static const _rivalIdleFrames = [
-    _rivalIdlePath,
-    'assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_001.png',
-    'assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_002.png',
-    'assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_003.png',
-  ];
+  InkFightBattleGame({BotProfile botProfile = BotProfile.easy})
+    : _bot = BotController(profile: botProfile, fighter: FighterId.rival);
+
+  /// The match this arena displays; read-only for HUD and tests.
+  MatchController get match => _match;
+
+  final MatchController _match = MatchController();
+  final BotController _bot;
+  int _playerSequence = 0;
 
   SpriteAnimationComponent? _player;
   SpriteAnimationComponent? _rival;
-  SpriteAnimation? _playerIdle;
-  SpriteAnimation? _playerPunch;
-  SpriteAnimation? _playerKick;
-  SpriteAnimation? _playerBlock;
-  SpriteAnimation? _playerJump;
+  _FighterAnims? _playerAnims;
+  _FighterAnims? _rivalAnims;
+  double _baselineY = 0;
   bool _loaded = false;
 
   @override
@@ -47,68 +43,146 @@ class InkFightBattleGame extends FlameGame {
     await super.onLoad();
     images.prefix = '';
 
-    _playerIdle = await _loadAnimation(_playerIdleFrames, stepTime: .14);
-    _playerPunch = await _loadAnimation(
-      [_playerIdlePath, _playerPunchPath, _playerIdlePath],
-      stepTime: .16,
-      loop: false,
-    );
-    _playerKick = await _loadAnimation(
-      [_playerIdlePath, _playerKickPath, _playerIdlePath],
-      stepTime: .18,
-      loop: false,
-    );
-    _playerBlock = await _loadAnimation(
-      [_playerIdlePath, _playerBlockPath, _playerIdlePath],
-      stepTime: .16,
-      loop: false,
-    );
-    _playerJump = await _loadAnimation(
-      [_playerIdlePath, _playerJumpPath, _playerIdlePath],
-      stepTime: .18,
-      loop: false,
-    );
+    final frames = await _runtimeFrames();
+    _playerAnims = await _buildAnims(frames, 'player_ink_fighter');
+    _rivalAnims = await _buildAnims(frames, 'bot_crimson_rival');
 
-    final rivalIdle = await _loadAnimation(_rivalIdleFrames, stepTime: .14);
-
-    // Flame requires an explicit size when autoResize is off; _layout()
-    // below replaces this placeholder with the real arena dimensions.
     _player = SpriteAnimationComponent(
-      animation: _playerIdle,
+      animation: _playerAnims!.idle,
+      // Flame requires an explicit size when autoResize is off; _layout()
+      // below replaces this placeholder with the real arena dimensions.
       size: Vector2.all(1),
       autoResize: false,
       anchor: Anchor.bottomCenter,
     );
     _rival = SpriteAnimationComponent(
-      animation: rivalIdle,
+      animation: _rivalAnims!.idle,
       size: Vector2.all(1),
       autoResize: false,
       anchor: Anchor.bottomCenter,
     );
 
-    // Frames are drawn facing right; the rival stands on the right, so
-    // mirror him to face the player.
-    _rival!.scale.x = -1;
-
     add(_rival!);
     add(_player!);
     _loaded = true;
     _layout(size);
-
-    // The first playable slice keeps the rival idle until bot AI is connected.
-    _rival!.animation = rivalIdle;
   }
 
-  Future<SpriteAnimation> _loadAnimation(
-    List<String> paths, {
-    required double stepTime,
-    bool loop = true,
-  }) async {
-    final sprites = <Sprite>[];
-    for (final path in paths) {
-      sprites.add(Sprite(await images.load(path)));
+  /// Every runtime frame, grouped by `character/action` and sorted, so the
+  /// animation recipes below always see the whole delivered cycle.
+  Future<Map<String, List<String>>> _runtimeFrames() async {
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    final byDir = <String, List<String>>{};
+    for (final key in manifest.listAssets()) {
+      if (!key.startsWith('assets/characters/runtime/')) {
+        continue;
+      }
+      byDir
+          .putIfAbsent(key.substring(0, key.lastIndexOf('/')), () => [])
+          .add(key);
     }
-    return SpriteAnimation.spriteList(sprites, stepTime: stepTime, loop: loop);
+    for (final cycle in byDir.values) {
+      cycle.sort();
+    }
+    return byDir;
+  }
+
+  Future<_FighterAnims> _buildAnims(
+    Map<String, List<String>> frames,
+    String character,
+  ) async {
+    Future<SpriteAnimation> cycle(
+      String action, {
+      required double stepTime,
+      bool loop = false,
+      bool bookendIdle = false,
+    }) async {
+      final paths = frames['assets/characters/runtime/$character/$action'];
+      if (paths == null || paths.isEmpty) {
+        throw StateError('no runtime frames for $character/$action');
+      }
+      final idleFirst = [
+        'assets/characters/runtime/$character/idle/'
+            '${character}_idle_000.png',
+      ];
+      final sequence = [
+        if (bookendIdle) ...idleFirst,
+        ...paths,
+        if (bookendIdle) ...idleFirst,
+      ];
+      final sprites = <Sprite>[];
+      for (final path in sequence) {
+        sprites.add(Sprite(await images.load(path)));
+      }
+      return SpriteAnimation.spriteList(
+        sprites,
+        stepTime: stepTime,
+        loop: loop,
+      );
+    }
+
+    return _FighterAnims(
+      idle: await cycle('idle', stepTime: .14, loop: true),
+      walk: await cycle('walk', stepTime: .09, loop: true),
+      jump: await cycle('jump', stepTime: .1),
+      lightPunch: await cycle('light_punch', stepTime: .09, bookendIdle: true),
+      heavyKick: await cycle('heavy_kick', stepTime: .12, bookendIdle: true),
+      block: await cycle('block', stepTime: .1, loop: true),
+      hurt: await cycle('hurt', stepTime: .1),
+    );
+  }
+
+  /// Touch intents, in the shape the online mode will send them later.
+  void sendPlayerAction(InputAction action) {
+    _match.submit(
+      InputCommand(
+        fighter: FighterId.player,
+        action: action,
+        sequence: ++_playerSequence,
+      ),
+    );
+  }
+
+  /// Held MOVE control: walk towards the rival while pressed.
+  void setPlayerMoving(bool moving) {
+    _match.setMoveAxis(FighterId.player, moving ? 1 : 0);
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    if (!_loaded) {
+      return;
+    }
+    _bot.update(dt, _match);
+    _match.tick(dt);
+    _syncFromMatch();
+  }
+
+  void _syncFromMatch() {
+    if (!_loaded || _player == null || _rival == null) {
+      return;
+    }
+    _apply(_player!, _playerAnims!, _match.stateOf(FighterId.player));
+    _apply(_rival!, _rivalAnims!, _match.stateOf(FighterId.rival));
+  }
+
+  void _apply(
+    SpriteAnimationComponent component,
+    _FighterAnims anims,
+    FighterState state,
+  ) {
+    component.position.x = state.x / _match.rules.arenaWidth * size.x;
+    // Frames are drawn facing right; `facing` mirrors whoever stands right.
+    component.scale.x = state.facing;
+    component.animation = anims.forAction(state.action);
+
+    var y = _baselineY;
+    if (state.isAirborne) {
+      final progress = 1 - state.jumpRemainingMs / _match.rules.jumpMs;
+      y -= math.sin(math.pi * progress.clamp(0, 1)) * component.size.y * .16;
+    }
+    component.position.y = y;
   }
 
   @override
@@ -124,46 +198,12 @@ class InkFightBattleGame extends FlameGame {
 
     final fighterSize = math.min(viewportSize.y * .74, viewportSize.x * .31);
     final sizeVector = Vector2.all(fighterSize);
+    _player!.size = sizeVector;
+    _rival!.size = sizeVector;
     // The runtime frames carry ~12% transparent padding under the feet, so
     // sink the anchor by that share to put the soles on the arena floor.
-    final baseline = viewportSize.y * .80 + fighterSize * .121;
-
-    _player!
-      ..size = sizeVector
-      ..position = Vector2(viewportSize.x * .29, baseline);
-    _rival!
-      ..size = sizeVector
-      ..position = Vector2(viewportSize.x * .71, baseline);
-  }
-
-  void playPlayerAction(String action) {
-    if (!_loaded) {
-      return;
-    }
-
-    final animation = switch (action) {
-      'light_punch' => _playerPunch,
-      'heavy_kick' => _playerKick,
-      'block' => _playerBlock,
-      'jump' => _playerJump,
-      _ => _playerIdle,
-    };
-    if (animation == null) {
-      return;
-    }
-
-    _player!.animation = animation;
-    final duration = switch (action) {
-      'heavy_kick' => 860,
-      'block' => 640,
-      'jump' => 720,
-      _ => 700,
-    };
-    async.Timer(Duration(milliseconds: duration), () {
-      if (_player?.isMounted ?? false) {
-        _player!.animation = _playerIdle;
-      }
-    });
+    _baselineY = viewportSize.y * .80 + fighterSize * .121;
+    _syncFromMatch();
   }
 
   @override
@@ -198,4 +238,35 @@ class InkFightBattleGame extends FlameGame {
 
     super.render(canvas);
   }
+}
+
+/// The seven animation cycles one fighter view needs.
+class _FighterAnims {
+  _FighterAnims({
+    required this.idle,
+    required this.walk,
+    required this.jump,
+    required this.lightPunch,
+    required this.heavyKick,
+    required this.block,
+    required this.hurt,
+  });
+
+  final SpriteAnimation idle;
+  final SpriteAnimation walk;
+  final SpriteAnimation jump;
+  final SpriteAnimation lightPunch;
+  final SpriteAnimation heavyKick;
+  final SpriteAnimation block;
+  final SpriteAnimation hurt;
+
+  SpriteAnimation forAction(FighterAction action) => switch (action) {
+    FighterAction.idle => idle,
+    FighterAction.walk => walk,
+    FighterAction.jump => jump,
+    FighterAction.lightPunch => lightPunch,
+    FighterAction.heavyKick => heavyKick,
+    FighterAction.block => block,
+    FighterAction.hitstun || FighterAction.blockstun => hurt,
+  };
 }

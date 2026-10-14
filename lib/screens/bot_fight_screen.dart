@@ -2,6 +2,7 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
 import '../game/ink_fight_battle_game.dart';
+import '../game/rules/input_command.dart';
 import '../theme/app_theme.dart';
 
 class BotFightScreen extends StatefulWidget {
@@ -48,10 +49,12 @@ class _BotFightScreenState extends State<BotFightScreen> {
               right: 16,
               bottom: 14,
               child: _BattleControls(
-                onPunch: () => _game.playPlayerAction('light_punch'),
-                onKick: () => _game.playPlayerAction('heavy_kick'),
-                onBlock: () => _game.playPlayerAction('block'),
-                onJump: () => _game.playPlayerAction('jump'),
+                onPunch: () => _game.sendPlayerAction(InputAction.lightPunch),
+                onKick: () => _game.sendPlayerAction(InputAction.heavyKick),
+                onBlock: () => _game.sendPlayerAction(InputAction.block),
+                onJump: () => _game.sendPlayerAction(InputAction.jump),
+                onMoveStart: () => _game.setPlayerMoving(true),
+                onMoveEnd: () => _game.setPlayerMoving(false),
               ),
             ),
             const Positioned(
@@ -161,39 +164,49 @@ class _BattleControls extends StatelessWidget {
     required this.onKick,
     required this.onBlock,
     required this.onJump,
+    required this.onMoveStart,
+    required this.onMoveEnd,
   });
 
   final VoidCallback onPunch;
   final VoidCallback onKick;
   final VoidCallback onBlock;
   final VoidCallback onJump;
+  final VoidCallback onMoveStart;
+  final VoidCallback onMoveEnd;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          height: 58,
-          padding: const EdgeInsets.symmetric(horizontal: 15),
-          decoration: BoxDecoration(
-            color: InkColors.white.withValues(alpha: .78),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: InkColors.line),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.gamepad_rounded, size: 20, color: InkColors.ink),
-              SizedBox(width: 8),
-              Text(
-                'MOVE',
-                style: TextStyle(
-                  color: InkColors.inkSoft,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.2,
+        GestureDetector(
+          // Hold to walk towards the rival; release to stop.
+          onLongPressStart: (_) => onMoveStart(),
+          onLongPressEnd: (_) => onMoveEnd(),
+          onLongPressCancel: onMoveEnd,
+          child: Container(
+            height: 58,
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            decoration: BoxDecoration(
+              color: InkColors.white.withValues(alpha: .78),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: InkColors.line),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.gamepad_rounded, size: 20, color: InkColors.ink),
+                SizedBox(width: 8),
+                Text(
+                  'MOVE',
+                  style: TextStyle(
+                    color: InkColors.inkSoft,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         const Spacer(),

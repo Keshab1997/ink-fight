@@ -4,17 +4,20 @@ import 'package:flame/components.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
+import 'package:inkfight/game/rules/input_command.dart';
+import 'package:inkfight/game/rules/match_rules.dart';
 
-/// Headless smoke test for the asset-backed bot fight arena: the game must
-/// load its runtime frames, mount both fighters, and react to every player
-/// action. The widget overlay is covered by `widget_test.dart`; this file
-/// covers the Flame game underneath it.
+/// Headless smoke test for the arena view over the deterministic match
+/// controller: the view must place, mirror and animate fighters exactly as
+/// the controller's states say. The widget overlay is covered by
+/// `widget_test.dart`; the controller's own rules by `match_*_test.dart`.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  Future<InkFightBattleGame> loadedGame() async {
-    final game = InkFightBattleGame();
+  Future<InkFightBattleGame> loadedGame({BotProfile? botProfile}) async {
+    final game = InkFightBattleGame(botProfile: botProfile ?? BotProfile.easy);
     game.onGameResize(Vector2(960, 540));
     await game.onLoad();
     return game;
@@ -23,66 +26,101 @@ void main() {
   List<SpriteAnimationComponent> fightersOf(InkFightBattleGame game) =>
       game.children.whereType<SpriteAnimationComponent>().toList();
 
-  test('arena loads both fighters from the runtime frames', () async {
+  void tick(InkFightBattleGame game, int frames) {
+    for (var i = 0; i < frames; i++) {
+      game.update(1 / 60);
+    }
+  }
+
+  /// Past the 2000 ms intro countdown, into live combat.
+  void pastCountdown(InkFightBattleGame game) => tick(game, 130);
+
+  test('arena loads both fighters at the controller start positions', () async {
     final game = await loadedGame();
     final fighters = fightersOf(game);
-
-    // Rival is added first, player second (see onLoad).
     expect(fighters, hasLength(2));
     final rival = fighters[0];
     final player = fighters[1];
 
-    expect(player.animation, isNotNull);
-    expect(rival.animation, isNotNull);
-    // The idle cycle breathes over the four delivered frames.
-    expect(player.animation!.frames, hasLength(4));
-    expect(rival.animation!.frames, hasLength(4));
-
-    // Rival is mirrored to face the player, who stands on the left.
-    expect(rival.scale.x, -1);
+    // startX 110 / arenaWidth 300, mapped onto the 960-wide viewport.
+    expect(player.position.x, closeTo(110 / 300 * 960, 1));
+    expect(rival.position.x, closeTo(190 / 300 * 960, 1));
+    // Frames are drawn facing right; the controller mirrors the rival.
     expect(player.scale.x, 1);
-    expect(player.position.x, lessThan(rival.position.x));
+    expect(rival.scale.x, -1);
 
     // Soles (frame content ends ~12% above the anchored image bottom) rest
     // on the arena floor line at 80% of the viewport height.
     expect(player.position.y - player.size.y * .121, closeTo(540 * .80, 1));
     expect(rival.position.y - rival.size.y * .121, closeTo(540 * .80, 1));
-    expect(player.size.x, greaterThan(0));
+    // The idle cycle breathes over the four delivered frames.
+    expect(player.animation!.frames, hasLength(4));
   });
 
-  test('every player action swaps in its own animation', () async {
-    final game = await loadedGame();
+  test('holding MOVE walks the player on the delivered cycle', () async {
+    // A passive bot keeps this test about walking, not about being punched.
+    final game = await loadedGame(
+      botProfile: const BotProfile(
+        difficulty: BotDifficulty.easy,
+        thinkIntervalMs: 60000,
+        reactionMs: 60000,
+        attackCooldownMs: 60000,
+        blockChance: 0,
+        heavyChance: 0,
+        hesitationChance: 1,
+        recoveryMs: 0,
+        preferredGap: 90,
+      ),
+    );
+    pastCountdown(game);
     final player = fightersOf(game)[1];
+    final start = player.position.x;
 
-    final idle = player.animation;
-    final seen = <SpriteAnimation>{idle!};
+    game.setPlayerMoving(true);
+    tick(game, 20);
+    expect(player.position.x, greaterThan(start));
+    expect(player.animation!.frames, hasLength(6)); // delivered walk cycle
 
-    for (final action in ['light_punch', 'heavy_kick', 'block', 'jump']) {
-      game.playPlayerAction(action);
-      expect(
-        player.animation,
-        isNot(idle),
-        reason: '$action should leave the idle animation',
-      );
-      seen.add(player.animation!);
-      player.animation = idle; // reset for the next action
-    }
-
-    // Idle + four distinct action animations.
-    expect(seen, hasLength(5));
+    game.setPlayerMoving(false);
+    tick(game, 2);
+    expect(player.animation!.frames, hasLength(4)); // back to idle
   });
 
-  test('unknown actions and pre-load calls are ignored safely', () async {
-    final game = InkFightBattleGame();
-    // Before onLoad nothing is mounted; the guard must swallow the call.
-    game.playPlayerAction('light_punch');
+  test(
+    'a walked-in punch damages the rival and plays the hurt cycle',
+    () async {
+      final game = await loadedGame();
+      pastCountdown(game);
+      final rival = fightersOf(game)[0];
 
-    game.onGameResize(Vector2(960, 540));
-    await game.onLoad();
-    final player = game.children.whereType<SpriteAnimationComponent>().last;
-    final idle = player.animation;
-    game.playPlayerAction('taunt'); // not wired yet
-    expect(player.animation, idle);
+      game.setPlayerMoving(true);
+      var landed = false;
+      for (var i = 0; i < 400 && !landed; i++) {
+        final player = game.match.stateOf(FighterId.player);
+        final gap = (game.match.stateOf(FighterId.rival).x - player.x).abs();
+        if (gap > 54) {
+          game.setPlayerMoving(true);
+        } else {
+          game.setPlayerMoving(false);
+          if (player.canAct) {
+            game.sendPlayerAction(InputAction.lightPunch);
+          }
+        }
+        tick(game, 1);
+        landed = game.match.stateOf(FighterId.rival).health < 100;
+      }
+
+      expect(landed, isTrue, reason: 'the light punch should connect');
+      expect(rival.animation!.frames, hasLength(3)); // hurt cycle
+    },
+  );
+
+  test('commands before load never crash the view', () async {
+    final game = InkFightBattleGame();
+    game.sendPlayerAction(InputAction.lightPunch);
+    game.setPlayerMoving(true);
+    game.update(1 / 60);
+    expect(game.children.whereType<SpriteAnimationComponent>(), isEmpty);
   });
 
   test('every deployed runtime frame is a decodable image', () async {
