@@ -59,13 +59,17 @@ class InkFightBattleGame extends FlameGame {
 
     final rivalIdle = await _loadAnimation([_rivalIdlePath], stepTime: 1);
 
+    // Flame requires an explicit size when autoResize is off; _layout()
+    // below replaces this placeholder with the real arena dimensions.
     _player = SpriteAnimationComponent(
       animation: _playerIdle,
+      size: Vector2.all(1),
       autoResize: false,
       anchor: Anchor.bottomCenter,
     );
     _rival = SpriteAnimationComponent(
       animation: rivalIdle,
+      size: Vector2.all(1),
       autoResize: false,
       anchor: Anchor.bottomCenter,
     );
