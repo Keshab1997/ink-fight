@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
@@ -27,9 +28,14 @@ class InkFightBattleGame extends FlameGame {
   /// The match this arena displays; read-only for HUD and tests.
   MatchController get match => _match;
 
+  /// Bumped whenever a value the HUD shows actually changes, so the screen
+  /// can listen instead of rebuilding every frame.
+  final ValueNotifier<int> hudVersion = ValueNotifier(0);
+
   final MatchController _match = MatchController();
   final BotController _bot;
   int _playerSequence = 0;
+  int _lastHudSnapshot = 0;
 
   SpriteAnimationComponent? _player;
   SpriteAnimationComponent? _rival;
@@ -129,11 +135,30 @@ class InkFightBattleGame extends FlameGame {
       heavyKick: await cycle('heavy_kick', stepTime: .12, bookendIdle: true),
       block: await cycle('block', stepTime: .1, loop: true),
       hurt: await cycle('hurt', stepTime: .1),
+      victory: await cycle('victory', stepTime: .12, loop: true),
+      // The rival has no defeat cycle yet; the view falls back to hurt.
+      defeat: frames.containsKey('assets/characters/runtime/$character/defeat')
+          ? await cycle('defeat', stepTime: .12)
+          : null,
     );
+  }
+
+  /// Winner poses, loser falls (or stings, until a defeat cycle exists).
+  SpriteAnimation _endPose(_FighterAnims anims, FighterState state) {
+    final outcome = _match.outcome;
+    if (outcome == MatchOutcome.draw) {
+      return anims.idle;
+    }
+    final playerWon = outcome == MatchOutcome.playerWin;
+    final won = (state.id == FighterId.player) == playerWon;
+    return won ? anims.victory : (anims.defeat ?? anims.hurt);
   }
 
   /// Touch intents, in the shape the online mode will send them later.
   void sendPlayerAction(InputAction action) {
+    if (_match.isFinished) {
+      return;
+    }
     _match.submit(
       InputCommand(
         fighter: FighterId.player,
@@ -145,7 +170,18 @@ class InkFightBattleGame extends FlameGame {
 
   /// Held MOVE control: walk towards the rival while pressed.
   void setPlayerMoving(bool moving) {
+    if (_match.isFinished) {
+      return;
+    }
     _match.setMoveAxis(FighterId.player, moving ? 1 : 0);
+  }
+
+  /// Back to the countdown with full health; the arena keeps its layout.
+  void restartMatch() {
+    _match.reset();
+    _bot.reset();
+    _playerSequence = 0;
+    _syncFromMatch();
   }
 
   @override
@@ -163,8 +199,22 @@ class InkFightBattleGame extends FlameGame {
     if (!_loaded || _player == null || _rival == null) {
       return;
     }
-    _apply(_player!, _playerAnims!, _match.stateOf(FighterId.player));
-    _apply(_rival!, _rivalAnims!, _match.stateOf(FighterId.rival));
+    final player = _match.stateOf(FighterId.player);
+    final rival = _match.stateOf(FighterId.rival);
+    _apply(_player!, _playerAnims!, player);
+    _apply(_rival!, _rivalAnims!, rival);
+
+    final snapshot = Object.hash(
+      player.health,
+      rival.health,
+      _match.timeRemainingMs ~/ 1000,
+      _match.phase,
+      _match.outcome,
+    );
+    if (snapshot != _lastHudSnapshot) {
+      _lastHudSnapshot = snapshot;
+      hudVersion.value++;
+    }
   }
 
   void _apply(
@@ -175,6 +225,12 @@ class InkFightBattleGame extends FlameGame {
     component.position.x = state.x / _match.rules.arenaWidth * size.x;
     // Frames are drawn facing right; `facing` mirrors whoever stands right.
     component.scale.x = state.facing;
+
+    if (_match.isFinished) {
+      component.animation = _endPose(anims, state);
+      component.position.y = _baselineY;
+      return;
+    }
     component.animation = anims.forAction(state.action);
 
     var y = _baselineY;
@@ -250,6 +306,8 @@ class _FighterAnims {
     required this.heavyKick,
     required this.block,
     required this.hurt,
+    required this.victory,
+    this.defeat,
   });
 
   final SpriteAnimation idle;
@@ -259,6 +317,8 @@ class _FighterAnims {
   final SpriteAnimation heavyKick;
   final SpriteAnimation block;
   final SpriteAnimation hurt;
+  final SpriteAnimation victory;
+  final SpriteAnimation? defeat;
 
   SpriteAnimation forAction(FighterAction action) => switch (action) {
     FighterAction.idle => idle,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../game/ink_fight_battle_game.dart';
 import '../game/rules/input_command.dart';
+import '../game/rules/match_rules.dart';
 import '../theme/app_theme.dart';
 
 class BotFightScreen extends StatefulWidget {
@@ -43,7 +44,15 @@ class _BotFightScreenState extends State<BotFightScreen> {
                 onTap: () => Navigator.of(context).pop(),
               ),
             ),
-            Positioned(top: 14, left: 72, right: 72, child: const _BattleHud()),
+            Positioned(top: 14, left: 72, right: 72, child: _BattleHud(game: _game)),
+            Positioned.fill(
+              child: ValueListenableBuilder<int>(
+                valueListenable: _game.hudVersion,
+                builder: (context, _, _) => _game.match.isFinished
+                    ? _RoundEndCard(game: _game)
+                    : const SizedBox.shrink(),
+              ),
+            ),
             Positioned(
               left: 16,
               right: 16,
@@ -70,34 +79,164 @@ class _BotFightScreenState extends State<BotFightScreen> {
 }
 
 class _BattleHud extends StatelessWidget {
-  const _BattleHud();
+  const _BattleHud({required this.game});
+
+  final InkFightBattleGame game;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Expanded(child: _HudHealth(label: 'YOU', value: .82)),
-        const SizedBox(width: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: InkColors.ink,
-            borderRadius: BorderRadius.circular(13),
-          ),
-          child: const Text(
-            '01 : 00',
-            style: TextStyle(
-              color: InkColors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.2,
+    return ValueListenableBuilder<int>(
+      valueListenable: game.hudVersion,
+      builder: (context, _, _) {
+        final rules = game.match.rules;
+        final player = game.match.stateOf(FighterId.player);
+        final rival = game.match.stateOf(FighterId.rival);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _HudHealth(
+                label: 'YOU',
+                value: player.health / rules.health,
+              ),
             ),
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: InkColors.ink,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Text(
+                _timerLabel(),
+                style: const TextStyle(
+                  color: InkColors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _HudHealth(
+                label: 'CRIMSON RIVAL',
+                value: rival.health / rules.health,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _timerLabel() {
+    final match = game.match;
+    if (match.phase == MatchPhase.countdown) {
+      return 'READY';
+    }
+    if (match.isFinished) {
+      return 'END';
+    }
+    final totalSeconds = (match.timeRemainingMs / 1000).ceil();
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes : $seconds';
+  }
+}
+
+/// The decided-match card: outcome, a rematch, and the way out.
+class _RoundEndCard extends StatelessWidget {
+  const _RoundEndCard({required this.game});
+
+  final InkFightBattleGame game;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (game.match.outcome) {
+      MatchOutcome.playerWin => 'YOU WIN',
+      MatchOutcome.rivalWin => 'CRIMSON RIVAL WINS',
+      MatchOutcome.draw || null => 'DRAW',
+    };
+    return ColoredBox(
+      color: InkColors.ink.withValues(alpha: .38),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(28, 22, 28, 24),
+          decoration: BoxDecoration(
+            color: InkColors.white,
+            borderRadius: BorderRadius.circular(19),
+            border: Border.all(color: InkColors.line),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: InkColors.ink,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Material(
+                    color: InkColors.ink,
+                    borderRadius: BorderRadius.circular(13),
+                    child: InkWell(
+                      onTap: game.restartMatch,
+                      borderRadius: BorderRadius.circular(13),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 11,
+                        ),
+                        child: Text(
+                          'REMATCH',
+                          style: TextStyle(
+                            color: InkColors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Material(
+                    color: InkColors.white,
+                    borderRadius: BorderRadius.circular(13),
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(),
+                      borderRadius: BorderRadius.circular(13),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 11,
+                        ),
+                        child: Text(
+                          'LEAVE',
+                          style: TextStyle(
+                            color: InkColors.inkSoft,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 12),
-        const Expanded(child: _HudHealth(label: 'CRIMSON RIVAL', value: .64)),
-      ],
+      ),
     );
   }
 }
