@@ -308,15 +308,26 @@ void main() {
       final match = MatchController();
       expect(match.countdownRemainingMs, 2000);
       expect(match.phase, MatchPhase.countdown);
-      match.tick(.25);
-      expect(match.countdownRemainingMs, greaterThan(1500)); // beat "3"
-      match.tick(.5);
-      expect(match.countdownRemainingMs, inInclusiveRange(1001, 1500)); // "2"
-      match.tick(.5);
-      expect(match.countdownRemainingMs, inInclusiveRange(501, 1000)); // "1"
-      match.tick(.5);
-      expect(match.countdownRemainingMs, lessThanOrEqualTo(500)); // "FIGHT!"
-      match.tick(.5);
+
+      // Frame-sized steps on purpose: `tick` consumes whole 16 ms slices and
+      // clamps one call to `maxCatchUpMs` (250 ms), so a single .5 s jump both
+      // loses its remainder and drifts ~20 ms per call — far enough to fall out
+      // of the beat windows below.
+      void step(int frames) {
+        for (var i = 0; i < frames; i++) {
+          match.tick(.016);
+        }
+      }
+
+      step(31); // ~500 ms in: beat "3"
+      expect(match.countdownRemainingMs, inInclusiveRange(1501, 2000));
+      step(31); // "2"
+      expect(match.countdownRemainingMs, inInclusiveRange(1001, 1500));
+      step(31); // "1"
+      expect(match.countdownRemainingMs, inInclusiveRange(501, 1000));
+      step(31); // "FIGHT!"
+      expect(match.countdownRemainingMs, lessThanOrEqualTo(500));
+      step(31);
       expect(match.phase, MatchPhase.fighting);
     });
   });
@@ -404,8 +415,9 @@ void main() {
 
     /// Walks the player east until the gap is within light-punch reach.
     void walkIntoRange(MatchController match) {
+      final reach = match.rules.lightAttack.reach;
       match.setMoveAxis(FighterId.player, 1);
-      for (var i = 0; i < 200 && (match.rival.x - match.player.x) > 50; i++) {
+      for (var i = 0; i < 200 && (match.rival.x - match.player.x) > reach * .9; i++) {
         match.tick(1 / 60);
       }
       match.setMoveAxis(FighterId.player, 0);
