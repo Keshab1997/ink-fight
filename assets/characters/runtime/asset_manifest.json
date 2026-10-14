@@ -2,17 +2,32 @@
   "canvas": 1024,
   "baseline_y": 900,
   "background": "transparent_rgba",
-  "status": "mvp_frame_batch_4",
+  "status": "mvp_frame_batch_5",
   "characters": {
     "bot_crimson_rival": {
       "source_archive": "assets/characters/originals/bot_crimson_rival",
-      "frame_count": 16,
+      "frame_count": 22,
       "expected_frame_count": 48,
       "frames": [
+        {
+          "file": "bot_crimson_rival_block_000.png",
+          "animation": "block",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/block/bot_crimson_rival_block_000.png"
+        },
         {
           "file": "bot_crimson_rival_block_001.png",
           "animation": "block",
           "runtime": "assets/characters/runtime/bot_crimson_rival/block/bot_crimson_rival_block_001.png"
+        },
+        {
+          "file": "bot_crimson_rival_block_002.png",
+          "animation": "block",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/block/bot_crimson_rival_block_002.png"
+        },
+        {
+          "file": "bot_crimson_rival_block_003.png",
+          "animation": "block",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/block/bot_crimson_rival_block_003.png"
         },
         {
           "file": "bot_crimson_rival_heavy_kick_001.png",
@@ -88,12 +103,24 @@
           "file": "bot_crimson_rival_walk_001.png",
           "animation": "walk",
           "runtime": "assets/characters/runtime/bot_crimson_rival/walk/bot_crimson_rival_walk_001.png"
+        },
+        {
+          "file": "bot_crimson_rival_walk_002.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/walk/bot_crimson_rival_walk_002.png"
+        },
+        {
+          "file": "bot_crimson_rival_walk_003.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/walk/bot_crimson_rival_walk_003.png"
+        },
+        {
+          "file": "bot_crimson_rival_walk_004.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/walk/bot_crimson_rival_walk_004.png"
         }
       ],
       "pending": [
-        "bot_crimson_rival_walk_002.png",
-        "bot_crimson_rival_walk_003.png",
-        "bot_crimson_rival_walk_004.png",
         "bot_crimson_rival_walk_005.png",
         "bot_crimson_rival_jump_000.png",
         "bot_crimson_rival_jump_001.png",
@@ -106,9 +133,6 @@
         "bot_crimson_rival_heavy_kick_002.png",
         "bot_crimson_rival_heavy_kick_004.png",
         "bot_crimson_rival_heavy_kick_005.png",
-        "bot_crimson_rival_block_000.png",
-        "bot_crimson_rival_block_002.png",
-        "bot_crimson_rival_block_003.png",
         "bot_crimson_rival_knockdown_000.png",
         "bot_crimson_rival_knockdown_001.png",
         "bot_crimson_rival_knockdown_002.png",
@@ -127,7 +151,7 @@
     },
     "player_ink_fighter": {
       "source_archive": "assets/characters/originals/player_ink_fighter",
-      "frame_count": 20,
+      "frame_count": 24,
       "expected_frame_count": 48,
       "frames": [
         {
@@ -229,13 +253,29 @@
           "file": "player_ink_fighter_walk_001.png",
           "animation": "walk",
           "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_001.png"
+        },
+        {
+          "file": "player_ink_fighter_walk_002.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_002.png"
+        },
+        {
+          "file": "player_ink_fighter_walk_003.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_003.png"
+        },
+        {
+          "file": "player_ink_fighter_walk_004.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_004.png"
+        },
+        {
+          "file": "player_ink_fighter_walk_005.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_005.png"
         }
       ],
       "pending": [
-        "player_ink_fighter_walk_002.png",
-        "player_ink_fighter_walk_003.png",
-        "player_ink_fighter_walk_004.png",
-        "player_ink_fighter_walk_005.png",
         "player_ink_fighter_jump_000.png",
         "player_ink_fighter_jump_001.png",
         "player_ink_fighter_jump_003.png",
