@@ -2,7 +2,7 @@
 
 **INK FIGHT** is a premium black-and-white doodle fighting game designed for landscape mobile play. The first release focuses on a polished Player vs Bot experience; online 1v1 matchmaking is the next major mode.
 
-> **Project status:** Pre-production / documentation-first. The repository currently contains the product specification, player-facing rules, legal drafts, technical plan, and visual concepts. Gameplay implementation will follow the roadmap.
+> **Project status:** Flutter foundation / first playable shell. The repository contains the product specification, player-facing rules, legal drafts, technical plan, visual concepts, and the first polished landscape home screen. The Bot Fight arena is the next implementation slice.
 
 ## Product identity
 
