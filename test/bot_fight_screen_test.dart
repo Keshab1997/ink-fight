@@ -97,18 +97,23 @@ void main() {
     // Normal is the default the design document asks for (GDD §8).
     expect(const BotFightScreen().difficulty, BotDifficulty.normal);
 
-    await tester.pumpWidget(
-      const MaterialApp(home: BotFightScreen(difficulty: BotDifficulty.hard)),
-    );
-    await tester.pump();
-    final game =
-        tester
-                .widget<GameWidget<FlameGame>>(
-                  find.byWidgetPredicate((w) => w is GameWidget<FlameGame>),
-                )
-                .game!
-            as InkFightBattleGame;
-    await tester.runAsync(() => game.loaded);
+    // Same mount recipe as the card test above: the frames decode in a real
+    // async zone, and `toBeLoaded()` + `ready()` hand back a mounted game.
+    late final InkFightBattleGame game;
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        const MaterialApp(home: BotFightScreen(difficulty: BotDifficulty.hard)),
+      );
+      game =
+          tester
+                  .widget<GameWidget<FlameGame>>(
+                    find.byWidgetPredicate((w) => w is GameWidget<FlameGame>),
+                  )
+                  .game!
+              as InkFightBattleGame;
+      await game.toBeLoaded();
+      await game.ready();
+    });
     await tester.pump();
 
     expect(game.botProfile, BotProfile.hard);
