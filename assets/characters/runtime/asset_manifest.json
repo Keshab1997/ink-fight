@@ -2,11 +2,11 @@
   "canvas": 1024,
   "baseline_y": 900,
   "background": "transparent_rgba",
-  "status": "mvp_frame_batch_10",
+  "status": "mvp_frame_batch_11",
   "characters": {
     "bot_crimson_rival": {
       "source_archive": "assets/characters/originals/bot_crimson_rival",
-      "frame_count": 41,
+      "frame_count": 47,
       "expected_frame_count": 48,
       "frames": [
         {
@@ -28,6 +28,31 @@
           "file": "bot_crimson_rival_block_003.png",
           "animation": "block",
           "runtime": "assets/characters/runtime/bot_crimson_rival/block/bot_crimson_rival_block_003.png"
+        },
+        {
+          "file": "bot_crimson_rival_defeat_000.png",
+          "animation": "defeat",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/defeat/bot_crimson_rival_defeat_000.png"
+        },
+        {
+          "file": "bot_crimson_rival_defeat_001.png",
+          "animation": "defeat",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/defeat/bot_crimson_rival_defeat_001.png"
+        },
+        {
+          "file": "bot_crimson_rival_defeat_002.png",
+          "animation": "defeat",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/defeat/bot_crimson_rival_defeat_002.png"
+        },
+        {
+          "file": "bot_crimson_rival_defeat_003.png",
+          "animation": "defeat",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/defeat/bot_crimson_rival_defeat_003.png"
+        },
+        {
+          "file": "bot_crimson_rival_defeat_004.png",
+          "animation": "defeat",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/defeat/bot_crimson_rival_defeat_004.png"
         },
         {
           "file": "bot_crimson_rival_heavy_kick_000.png",
@@ -135,6 +160,11 @@
           "runtime": "assets/characters/runtime/bot_crimson_rival/knockdown/bot_crimson_rival_knockdown_002.png"
         },
         {
+          "file": "bot_crimson_rival_knockdown_003.png",
+          "animation": "knockdown",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/knockdown/bot_crimson_rival_knockdown_003.png"
+        },
+        {
           "file": "bot_crimson_rival_light_punch_000.png",
           "animation": "light_punch",
           "runtime": "assets/characters/runtime/bot_crimson_rival/light_punch/bot_crimson_rival_light_punch_000.png"
@@ -216,18 +246,12 @@
         }
       ],
       "pending": [
-        "bot_crimson_rival_knockdown_003.png",
-        "bot_crimson_rival_knockdown_004.png",
-        "bot_crimson_rival_defeat_000.png",
-        "bot_crimson_rival_defeat_001.png",
-        "bot_crimson_rival_defeat_002.png",
-        "bot_crimson_rival_defeat_003.png",
-        "bot_crimson_rival_defeat_004.png"
+        "bot_crimson_rival_knockdown_004.png"
       ]
     },
     "player_ink_fighter": {
       "source_archive": "assets/characters/originals/player_ink_fighter",
-      "frame_count": 47,
+      "frame_count": 48,
       "expected_frame_count": 48,
       "frames": [
         {
@@ -254,6 +278,11 @@
           "file": "player_ink_fighter_defeat_000.png",
           "animation": "defeat",
           "runtime": "assets/characters/runtime/player_ink_fighter/defeat/player_ink_fighter_defeat_000.png"
+        },
+        {
+          "file": "player_ink_fighter_defeat_001.png",
+          "animation": "defeat",
+          "runtime": "assets/characters/runtime/player_ink_fighter/defeat/player_ink_fighter_defeat_001.png"
         },
         {
           "file": "player_ink_fighter_defeat_002.png",
@@ -466,9 +495,7 @@
           "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_005.png"
         }
       ],
-      "pending": [
-        "player_ink_fighter_defeat_001.png"
-      ]
+      "pending": []
     }
   },
   "note": "Original AI output is immutable under assets/characters/originals. Runtime files are deterministic cleaned copies. Generate pending frames in small AI batches."

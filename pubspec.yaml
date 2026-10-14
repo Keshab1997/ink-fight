@@ -78,6 +78,7 @@ flutter:
     - assets/characters/runtime/bot_crimson_rival/hurt/
     - assets/characters/runtime/bot_crimson_rival/victory/
     - assets/characters/runtime/bot_crimson_rival/knockdown/
+    - assets/characters/runtime/bot_crimson_rival/defeat/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
