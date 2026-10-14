@@ -73,6 +73,7 @@ flutter:
     - assets/characters/runtime/bot_crimson_rival/heavy_kick/
     - assets/characters/runtime/bot_crimson_rival/walk/
     - assets/characters/runtime/bot_crimson_rival/jump/
+    - assets/characters/runtime/bot_crimson_rival/block/
     - assets/characters/runtime/bot_crimson_rival/hurt/
     - assets/characters/runtime/bot_crimson_rival/victory/
 
