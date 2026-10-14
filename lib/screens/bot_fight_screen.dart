@@ -60,7 +60,10 @@ class _BotFightScreenState extends State<BotFightScreen> {
             Positioned.fill(
               child: ValueListenableBuilder<int>(
                 valueListenable: _game.hudVersion,
-                builder: (context, _, _) => _game.match.isFinished
+                // The card waits for the arena: a knockout plays its
+                // slow-motion and frozen beat first (GAME_FEEL §5), a match
+                // the clock decided stamps in at once.
+                builder: (context, _, _) => _game.roundEndCardVisible
                     ? _RoundEndCard(game: _game)
                     : const SizedBox.shrink(),
               ),
