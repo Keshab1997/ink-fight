@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/doodle_fighter_painter.dart';
-import 'bot_fight_screen.dart';
+import 'app_routes.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -132,8 +132,7 @@ class _HeroCopy extends StatelessWidget {
   final bool compact;
 
   void _showIntro(BuildContext context) {
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const BotFightScreen()));
+    Navigator.of(context).pushNamed(InkRoutes.botFight);
   }
 
   @override
@@ -257,24 +256,7 @@ class _ActionRail extends StatelessWidget {
   }
 
   void _showSettings(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Settings'),
-          content: const Text(
-            'Audio, haptics, accessibility, and account settings will live here.\n\n'
-            'This first run is focused on the landscape home screen.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('CLOSE'),
-            ),
-          ],
-        );
-      },
-    );
+    Navigator.of(context).pushNamed(InkRoutes.settings);
   }
 
   @override
@@ -287,11 +269,7 @@ class _ActionRail extends StatelessWidget {
             label: 'BOT FIGHT',
             caption: 'PRACTICE THE BASICS',
             icon: Icons.bolt_rounded,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const BotFightScreen()),
-              );
-            },
+            onTap: () => Navigator.of(context).pushNamed(InkRoutes.botFight),
           ),
         ),
         const SizedBox(width: 8),
