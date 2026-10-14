@@ -11,7 +11,7 @@ The prompts below are written for an image model that can accept a reference ima
 Use this style language in every call:
 
 ```text
-Original premium black-and-white doodle fighting game art for INK FIGHT: Doodle Combat. Thick confident black ink outer contour, lighter hand-drawn construction marks, controlled paper-white fill, a few soft grey ink textures, expressive readable silhouette, clean isolated full-body character, consistent proportions, consistent face, consistent hands and feet, front three-quarter mobile fighting-game reference, no colour, no text, no logo, no UI, no background, no ground shadow, no watermark, no extra character, do not crop any part of the character.
+Original premium mostly black-and-white doodle fighting game art for INK FIGHT: Doodle Combat. Thick confident black ink outer contour, lighter hand-drawn construction marks, controlled paper-white fill, a few soft grey ink textures, and a very limited crimson red identity accent only when specified. Expressive readable silhouette, clean isolated full-body character, consistent proportions, consistent face, consistent hands and feet, front three-quarter mobile fighting-game reference, no uncontrolled colour, no text, no logo, no UI, no background, no ground shadow, no watermark, no extra character, do not crop any part of the character.
 ```
 
 ## 2. Base reference prompt — player
@@ -23,7 +23,7 @@ Create one standalone full-body character reference for an original mobile fight
 ## 3. Base reference prompt — bot
 
 ```text
-Create one standalone full-body character reference for an original mobile fighting game. The character is a playful ink robot named bot_ink_brawler: solid black ink body, thick expressive outline, chunky asymmetrical shoulders and feet, two clear white eye shapes, a small antenna or ink notch, readable simple hands, three-quarter stance facing left. Use the global style lock. Isolate the entire character on a transparent or pure white background with generous padding. Show one neutral ready stance only. No second character, no arena, no text, no UI, no watermark, and no cropped hands or feet.
+Create one standalone full-body character reference for an original mobile fighting game. The character is a stylish non-robot doodle rival named bot_crimson_rival: predominantly solid black ink body and clothing, thick expressive outline, same boxer family and proportions as the player, a sharper confident expression, white eyes inside a controlled crimson red mask-like face accent, black scarf, and a few thin crimson red contour marks on gloves and silhouette. No mechanical parts, armor panels, antenna, or robot details. Three-quarter stance facing left. Use the global style lock. Isolate the entire character on a transparent or pure white background with generous padding. Show one neutral ready stance only. No second character, no arena, no text, no UI, no watermark, and no cropped hands or feet.
 ```
 
 ## 4. Universal frame prompt template
@@ -39,7 +39,7 @@ The following action descriptions are appended one at a time to the universal fr
 ### Idle — 4 frames
 
 - `idle_000`: neutral ready stance, knees relaxed, arms lowered but ready, calm focused face.
-- `idle_001`: same stance with a tiny chest rise and scarf or antenna lifted a few millimetres.
+- `idle_001`: same stance with a tiny chest rise and scarf or ink ribbon lifted a few millimetres.
 - `idle_002`: same stance with the opposite foot and shoulder carrying a very small amount of weight.
 - `idle_003`: return to the exact neutral ready stance, matching frame 000.
 
@@ -101,7 +101,7 @@ The following action descriptions are appended one at a time to the universal fr
 ### Victory — 5 frames
 
 - `victory_000`: upright celebration start, fists raised, happy determined face.
-- `victory_001`: full celebratory pose with scarf or antenna moving upward.
+- `victory_001`: full celebratory pose with scarf or ink ribbon moving upward.
 - `victory_002`: strongest victory silhouette, one foot lifted or a confident lean.
 - `victory_003`: settling pose with a small ink flourish.
 - `victory_004`: clean result pose, feet stable and face clearly visible.
@@ -125,7 +125,7 @@ Avoid: multiple characters, duplicate limbs, extra fingers, missing hands, missi
 ## 7. Production sequence
 
 1. Generate player base reference.
-2. Generate bot base reference.
+2. Generate bot rival base reference.
 3. Review silhouette, face, accessories, direction, and commercial-use suitability.
 4. Lock the approved references; do not keep changing the base design during frame generation.
 5. Generate MVP frames one by one using the appropriate reference image.

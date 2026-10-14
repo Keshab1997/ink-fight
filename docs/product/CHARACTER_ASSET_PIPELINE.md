@@ -21,7 +21,7 @@ assets/
       knockdown/
       victory/
       defeat/
-    bot_ink_brawler/
+    bot_crimson_rival/
       reference/
       idle/
       walk/

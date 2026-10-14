@@ -33,14 +33,15 @@
 - Three-quarter fighting stance facing right in the reference image.
 - White fill must remain distinct from the paper arena through its black contour.
 
-### Bot — `bot_ink_brawler`
+### Bot — `bot_crimson_rival`
 
-- Solid black ink body with white face/eye details.
-- Chunkier, asymmetrical robot-doodle silhouette with a small antenna or ink notch.
-- Clear white eye shapes that remain visible at small scale.
-- Heavier shoulders and feet than the player.
+- Predominantly solid black ink body with controlled crimson red accents.
+- Same doodle-boxer family as the player, but with sharper hair/ink tufts, a confident rival expression, and a red mask-like face mark.
+- White eyes remain readable inside the crimson face accent.
+- Black scarf, gloves, and clothing use a thin red contour only where it improves recognition.
+- Slightly heavier stance and larger shoulders than the player, without any robot or mechanical parts.
 - Three-quarter fighting stance facing left in the reference image.
-- Bot must look fun and readable, not frightening or mechanically over-detailed.
+- The rival should feel stylish and competitive, not frightening, gory, or over-detailed.
 
 ## 3. Frame inventory
 
@@ -122,7 +123,7 @@ Use expressive poses that can be read behind the result overlay. Victory must fe
 - **Pivot:** horizontal center of the feet; baseline at approximately 88% of the canvas height.
 - **Padding:** at least 8% transparent breathing room around the silhouette.
 - **Direction:** player reference faces right; bot reference faces left. Do not flip frames without checking facial details.
-- **Colour:** black `#101010`, paper white `#F7F7F2`, limited grey only for controlled texture.
+- **Colour:** black `#101010`, paper white `#F7F7F2`, and a controlled rival crimson accent `#C51F3A`; grey only for controlled texture.
 - **Naming:** `{character}_{animation}_{frame:000}.png`.
 
 Examples:
@@ -130,8 +131,8 @@ Examples:
 ```text
 player_ink_fighter_idle_000.png
 player_ink_fighter_light_punch_002.png
-bot_ink_brawler_block_001.png
-bot_ink_brawler_defeat_004.png
+bot_crimson_rival_block_001.png
+bot_crimson_rival_defeat_004.png
 ```
 
 ## 6. Flame integration plan
