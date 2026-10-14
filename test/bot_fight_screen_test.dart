@@ -16,18 +16,29 @@ void main() {
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(const MaterialApp(home: BotFightScreen()));
-    await tester.pump();
-    final game =
-        tester
-                .widget<GameWidget<FlameGame>>(
-                  find.byWidgetPredicate((w) => w is GameWidget<FlameGame>),
-                )
-                .game!
-            as InkFightBattleGame;
-
-    // Image decoding is real async; let onLoad finish before ticking.
-    await tester.runAsync(() => game.loaded);
+    // Image decoding is real async, so the whole mount has to happen inside
+    // `runAsync`: in a fake-async zone the game's `onLoad` never finishes
+    // loading its frames and the widget never hands back a mounted game.
+    //
+    // Do not wait on `game.loaded` here - that is the *component* lifecycle
+    // future, and it only completes once GameWidget's loader has mounted the
+    // game. Awaiting it from the test zone waits forever. Flame's own hook for
+    // exactly this situation is `toBeLoaded()` (see
+    // flame/test/game/game_widget/game_widget_test.dart), and `ready()` then
+    // flushes the component tree so both fighters exist before we tick.
+    late final InkFightBattleGame game;
+    await tester.runAsync(() async {
+      await tester.pumpWidget(const MaterialApp(home: BotFightScreen()));
+      game =
+          tester
+                  .widget<GameWidget<FlameGame>>(
+                    find.byWidgetPredicate((w) => w is GameWidget<FlameGame>),
+                  )
+                  .game!
+              as InkFightBattleGame;
+      await game.toBeLoaded();
+      await game.ready();
+    });
     await tester.pump();
 
     // An idle player loses to the practice bot; simulate it headlessly.
