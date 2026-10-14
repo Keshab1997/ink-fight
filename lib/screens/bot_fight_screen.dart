@@ -22,6 +22,16 @@ class BotFightScreen extends StatefulWidget {
 class _BotFightScreenState extends State<BotFightScreen> {
   late final InkFightBattleGame _game;
 
+  /// The pause overlay is up, and the engine is stopped with it: the match,
+  /// the bot and the ink all freeze together because `pauseEngine` stops the
+  /// one loop that drives them.
+  bool _paused = false;
+
+  /// The one-time controls card. It greets every fresh mount of this screen
+  /// and stays away after GOT IT — a plain State field on purpose: no
+  /// persistence, no settings, no pubspec change.
+  bool _showControlsHelp = true;
+
   @override
   void initState() {
     super.initState();
@@ -36,52 +46,132 @@ class _BotFightScreenState extends State<BotFightScreen> {
     super.dispose();
   }
 
+  /// A decided match cannot be paused — the round-end card already owns
+  /// REMATCH and the way out.
+  void _pause() {
+    if (_paused || _game.roundEndCardVisible) {
+      return;
+    }
+    _game.pauseEngine();
+    setState(() => _paused = true);
+  }
+
+  void _resume() {
+    if (!_paused) {
+      return;
+    }
+    _game.resumeEngine();
+    setState(() => _paused = false);
+  }
+
+  void _restartFromPause() {
+    _game.restartMatch();
+    _resume();
+  }
+
+  /// System back, one layer at a time: the help card dismisses, the pause
+  /// overlay resumes, a decided match leaves like the card's LEAVE button,
+  /// and a live fight opens the pause overlay instead of popping to the menu.
+  void _onBackGesture(bool didPop) {
+    if (didPop) {
+      return;
+    }
+    if (_showControlsHelp) {
+      setState(() => _showControlsHelp = false);
+      return;
+    }
+    if (_paused) {
+      _resume();
+      return;
+    }
+    if (_game.roundEndCardVisible) {
+      Navigator.of(context).pop();
+      return;
+    }
+    _pause();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(child: GameWidget(game: _game)),
-            Positioned(
-              top: 12,
-              left: 12,
-              child: _RoundIconButton(
-                icon: Icons.arrow_back_rounded,
-                tooltip: 'Back to menu',
-                onTap: () => Navigator.of(context).pop(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) => _onBackGesture(didPop),
+      child: Scaffold(
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(child: GameWidget(game: _game)),
+              Positioned(
+                top: 12,
+                left: 12,
+                child: _RoundIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  tooltip: 'Back to menu',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
               ),
-            ),
-            Positioned(
-              top: 14,
-              left: 72,
-              right: 72,
-              child: _BattleHud(game: _game),
-            ),
-            Positioned.fill(
-              child: ValueListenableBuilder<int>(
-                valueListenable: _game.hudVersion,
-                // The card waits for the arena: a knockout plays its
-                // slow-motion and frozen beat first (GAME_FEEL §5), a match
-                // the clock decided stamps in at once.
-                builder: (context, _, _) => _game.roundEndCardVisible
-                    ? _RoundEndCard(game: _game)
-                    : const SizedBox.shrink(),
+              Positioned(
+                top: 14,
+                left: 72,
+                right: 72,
+                child: _BattleHud(game: _game),
               ),
-            ),
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 14,
-              child: _BattleControls(
-                onPunch: () => _game.sendPlayerAction(InputAction.lightPunch),
-                onKick: () => _game.sendPlayerAction(InputAction.heavyKick),
-                onBlock: () => _game.sendPlayerAction(InputAction.block),
-                onJump: () => _game.sendPlayerAction(InputAction.jump),
-                onMoveAxis: _game.setPlayerMoveAxis,
+              Positioned(
+                top: 12,
+                right: 12,
+                child: ValueListenableBuilder<int>(
+                  valueListenable: _game.hudVersion,
+                  // Hidden once the round-end card is up: a decided match
+                  // cannot be paused.
+                  builder: (context, _, _) => _game.roundEndCardVisible
+                      ? const SizedBox.shrink()
+                      : _RoundIconButton(
+                          icon: Icons.pause_rounded,
+                          tooltip: 'Pause the match',
+                          onTap: _pause,
+                        ),
+                ),
               ),
-            ),
-          ],
+              Positioned.fill(
+                child: ValueListenableBuilder<int>(
+                  valueListenable: _game.hudVersion,
+                  // The card waits for the arena: a knockout plays its
+                  // slow-motion and frozen beat first (GAME_FEEL §5), a match
+                  // the clock decided stamps in at once.
+                  builder: (context, _, _) => _game.roundEndCardVisible
+                      ? _RoundEndCard(game: _game)
+                      : const SizedBox.shrink(),
+                ),
+              ),
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 14,
+                child: _BattleControls(
+                  onPunch: () => _game.sendPlayerAction(InputAction.lightPunch),
+                  onKick: () => _game.sendPlayerAction(InputAction.heavyKick),
+                  onBlock: () => _game.sendPlayerAction(InputAction.block),
+                  onJump: () => _game.sendPlayerAction(InputAction.jump),
+                  onMoveAxis: _game.setPlayerMoveAxis,
+                ),
+              ),
+              if (_paused)
+                Positioned.fill(
+                  child: _PauseOverlay(
+                    onResume: _resume,
+                    onRestart: _restartFromPause,
+                    onQuit: () => Navigator.of(context).pop(),
+                    onControls: () => setState(() => _showControlsHelp = true),
+                  ),
+                ),
+              if (_showControlsHelp)
+                Positioned.fill(
+                  child: _ControlsHelpCard(
+                    onDismiss: () => setState(() => _showControlsHelp = false),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -247,6 +337,178 @@ class _RoundEndCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The dialog vocabulary the pause and help overlays share with
+/// [_RoundEndCard]: ink wash over the arena, a white panel on a thin line.
+/// The full-screen gesture absorber keeps stray taps off the controls and
+/// the canvas underneath — dialogs close through their own buttons only.
+class _InkDialog extends StatelessWidget {
+  const _InkDialog({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: ColoredBox(
+        color: InkColors.ink.withValues(alpha: .38),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(28, 22, 28, 24),
+              decoration: BoxDecoration(
+                color: InkColors.white,
+                borderRadius: BorderRadius.circular(19),
+                border: Border.all(color: InkColors.line),
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: children),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One dialog action row, in the round-end card's button language.
+class _DialogButton extends StatelessWidget {
+  const _DialogButton({
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 216,
+      child: Material(
+        color: primary ? InkColors.ink : InkColors.white,
+        borderRadius: BorderRadius.circular(13),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(13),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                color: primary ? InkColors.ink : InkColors.line,
+              ),
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: primary ? InkColors.white : InkColors.inkSoft,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The paused fight: resume, restart, read the controls, or leave. The
+/// round-end card's REMATCH and LEAVE are deliberately not duplicated here —
+/// a decided match never reaches this overlay.
+class _PauseOverlay extends StatelessWidget {
+  const _PauseOverlay({
+    required this.onResume,
+    required this.onRestart,
+    required this.onQuit,
+    required this.onControls,
+  });
+
+  final VoidCallback onResume;
+  final VoidCallback onRestart;
+  final VoidCallback onQuit;
+  final VoidCallback onControls;
+
+  @override
+  Widget build(BuildContext context) {
+    return _InkDialog(
+      children: [
+        const Text(
+          'PAUSED',
+          style: TextStyle(
+            color: InkColors.ink,
+            fontSize: 19,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.4,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _DialogButton(label: 'RESUME', onTap: onResume, primary: true),
+        const SizedBox(height: 10),
+        _DialogButton(label: 'RESTART', onTap: onRestart),
+        const SizedBox(height: 10),
+        _DialogButton(label: 'CONTROLS', onTap: onControls),
+        const SizedBox(height: 10),
+        _DialogButton(label: 'QUIT TO MENU', onTap: onQuit),
+      ],
+    );
+  }
+}
+
+/// The one-time greeting for the new controls: what the joystick does and
+/// what the four buttons are. The lines are single strings on purpose, so
+/// the card never doubles the arena's own PUNCH / KICK labels for finders.
+class _ControlsHelpCard extends StatelessWidget {
+  const _ControlsHelpCard({required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  static const TextStyle _line = TextStyle(
+    color: InkColors.inkSoft,
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    letterSpacing: .4,
+    height: 1.45,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return _InkDialog(
+      children: [
+        const Text(
+          'CONTROLS',
+          style: TextStyle(
+            color: InkColors.ink,
+            fontSize: 19,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.4,
+          ),
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'DRAG the joystick left / right to retreat and advance.',
+          style: _line,
+        ),
+        const SizedBox(height: 8),
+        const Text('PUSH the joystick up to jump.', style: _line),
+        const SizedBox(height: 8),
+        const Text(
+          'The four buttons are PUNCH / KICK / BLOCK / JUMP.',
+          style: _line,
+        ),
+        const SizedBox(height: 18),
+        _DialogButton(label: 'GOT IT', onTap: onDismiss, primary: true),
+      ],
     );
   }
 }

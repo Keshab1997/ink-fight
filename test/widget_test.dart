@@ -75,7 +75,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
 
     expect(find.byType(BotFightScreen), findsOneWidget);
+    // The one-time controls card greets a player entering the arena, and
+    // GOT IT dismisses it for the rest of this screen's life.
+    expect(find.text('GOT IT'), findsOneWidget);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    expect(find.text('GOT IT'), findsNothing);
     expect(find.text('CRIMSON RIVAL'), findsOneWidget);
+    // The card's copy names the buttons in one sentence, so the arena's own
+    // labels stay unique finders.
     expect(find.text('PUNCH'), findsOneWidget);
     expect(find.text('KICK'), findsOneWidget);
   });

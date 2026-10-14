@@ -43,6 +43,10 @@ void main() {
     });
     await tester.pump();
 
+    // The one-time controls card greets first; GOT IT clears the way.
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
     // An idle player loses to the practice bot; simulate it headlessly.
     for (var i = 0; i < 4200 && !game.match.isFinished; i++) {
       game.update(1 / 60);
@@ -71,6 +75,8 @@ void main() {
     expect(guard, greaterThanOrEqualTo(35), reason: '~600 ms of cinema');
 
     expect(find.text('REMATCH'), findsOneWidget);
+    // A decided match cannot be paused: the button is gone with the card up.
+    expect(find.byIcon(Icons.pause_rounded), findsNothing);
     expect(
       find.text(
         game.match.outcome == MatchOutcome.playerWin
@@ -115,6 +121,9 @@ void main() {
       await game.toBeLoaded();
       await game.ready();
     });
+    await tester.pump();
+    // Dismiss the one-time controls card like a player would.
+    await tester.tap(find.text('GOT IT'));
     await tester.pump();
 
     expect(game.botProfile, BotProfile.hard);
@@ -203,5 +212,150 @@ void main() {
     expect(jumps, 3);
     await second.up();
     await tester.pump(const Duration(milliseconds: 150));
+  });
+
+  /// Mounts the screen the proven way (the frames decode in a real async
+  /// zone) and leaves the one-time controls card up, as a fresh mount does.
+  Future<InkFightBattleGame> mountFight(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1600, 720);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+
+    late final InkFightBattleGame game;
+    await tester.runAsync(() async {
+      await tester.pumpWidget(const MaterialApp(home: BotFightScreen()));
+      game =
+          tester
+                  .widget<GameWidget<FlameGame>>(
+                    find.byWidgetPredicate((w) => w is GameWidget<FlameGame>),
+                  )
+                  .game!
+              as InkFightBattleGame;
+      await game.toBeLoaded();
+      await game.ready();
+    });
+    await tester.pump();
+    return game;
+  }
+
+  testWidgets('pause freezes the match clock and RESUME runs it again', (
+    tester,
+  ) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    // Headlessly into live combat, then let the clock run a second.
+    for (var i = 0; i < 190 && game.match.phase != MatchPhase.fighting; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.match.phase, MatchPhase.fighting);
+    for (var i = 0; i < 60; i++) {
+      game.update(1 / 60);
+    }
+    final clock = game.match.timeRemainingMs;
+    expect(clock, lessThan(game.match.rules.roundMs));
+
+    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.pump();
+    expect(find.text('PAUSED'), findsOneWidget);
+    expect(game.paused, isTrue);
+
+    // Real time passes, the match does not move.
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      game.match.timeRemainingMs,
+      clock,
+      reason: 'the stopped engine freezes the clock',
+    );
+
+    await tester.tap(find.text('RESUME'));
+    await tester.pump();
+    expect(find.text('PAUSED'), findsNothing);
+    expect(game.paused, isFalse);
+
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(game.match.timeRemainingMs, lessThan(clock));
+  });
+
+  testWidgets('RESTART winds health and the clock back to fresh values', (
+    tester,
+  ) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    // ~7 s of headless combat: the countdown passes, the clock runs down and
+    // the normal bot has been working on the player.
+    for (var i = 0; i < 430; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.match.isFinished, isFalse);
+    expect(game.match.timeRemainingMs, lessThan(game.match.rules.roundMs));
+
+    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.pump();
+    await tester.tap(find.text('RESTART'));
+    await tester.pump();
+
+    expect(find.text('PAUSED'), findsNothing);
+    expect(game.paused, isFalse, reason: 'RESTART resumes the engine');
+    expect(game.match.phase, MatchPhase.countdown);
+    expect(game.match.timeRemainingMs, game.match.rules.roundMs);
+    expect(
+      game.match.stateOf(FighterId.player).health,
+      game.match.rules.health,
+    );
+    expect(game.match.stateOf(FighterId.rival).health, game.match.rules.health);
+
+    // And the fresh countdown visibly runs on the resumed engine.
+    final countdown = game.match.countdownRemainingMs;
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(game.match.countdownRemainingMs, lessThan(countdown));
+  });
+
+  testWidgets('the controls card greets once per mount, pause keeps it '
+      'readable', (tester) async {
+    final game = await mountFight(tester);
+
+    // First mount: the card is up over the arena.
+    expect(find.text('GOT IT'), findsOneWidget);
+    expect(find.text('CONTROLS'), findsOneWidget);
+    expect(find.textContaining('joystick'), findsNWidgets(2));
+
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    expect(find.text('GOT IT'), findsNothing);
+
+    // It does not come back on its own within this screen's lifetime.
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('GOT IT'), findsNothing);
+
+    // The pause overlay's CONTROLS makes it readable at any time — over the
+    // overlay, with the engine still stopped.
+    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.pump();
+    expect(find.text('PAUSED'), findsOneWidget);
+    await tester.tap(find.text('CONTROLS'));
+    await tester.pump();
+    expect(find.text('GOT IT'), findsOneWidget);
+    expect(game.paused, isTrue);
+
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    expect(
+      find.text('PAUSED'),
+      findsOneWidget,
+      reason: 'GOT IT returns to the pause overlay underneath',
+    );
+    expect(game.paused, isTrue);
+
+    await tester.tap(find.text('RESUME'));
+    await tester.pump();
+    expect(find.text('PAUSED'), findsNothing);
+    expect(game.paused, isFalse);
   });
 }
