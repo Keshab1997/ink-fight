@@ -40,3 +40,6 @@ GoogleService-Info.plist
 
 # Do not commit production ad or backend credentials
 secrets/
+
+# Python bytecode from the repo's own tools.
+__pycache__/

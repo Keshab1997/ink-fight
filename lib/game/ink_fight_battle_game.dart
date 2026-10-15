@@ -144,6 +144,11 @@ const double _kRetreatLeanPx = 6;
 const double _kFootstepUnits = 20;
 const double _kFootstepPuffMs = 120;
 
+/// Every other puff is one foot landing: the tap that makes walking audible.
+/// At the full 78 u/s stride that is a tap roughly every half second — one
+/// stride, not a buzz.
+const int _kFootfallEveryNthPuff = 2;
+
 /// Contact punch-in: on a clean hit the world nudges toward the contact
 /// point on top of the shake, decaying fast.
 const double _kPunchLightPx = 3;
@@ -281,6 +286,14 @@ class InkFightBattleGame extends FlameGame {
 
   /// Arena units walked since the last footstep puff, per fighter.
   final Map<FighterId, double> _walkedUnits = <FighterId, double>{
+    FighterId.player: 0,
+    FighterId.rival: 0,
+  };
+
+  /// Puffs spawned since the last heard footfall, per fighter: every
+  /// [_kFootfallEveryNthPuff]th one taps. Counted, not timed, so the tap
+  /// follows the feet wherever the stride share goes.
+  final Map<FighterId, int> _puffsSinceFootfall = <FighterId, int>{
     FighterId.player: 0,
     FighterId.rival: 0,
   };
@@ -548,6 +561,7 @@ class InkFightBattleGame extends FlameGame {
       _landingSquashMs[id] = 0;
       _whiffLean[id] = null;
       _walkedUnits[id] = 0;
+      _puffsSinceFootfall[id] = 0;
       _retreating[id] = false;
     }
     _prevClockMs = _match.timeRemainingMs;
@@ -1067,6 +1081,15 @@ class InkFightBattleGame extends FlameGame {
       while ((_walkedUnits[state.id] ?? 0) >= _kFootstepUnits) {
         _walkedUnits[state.id] = _walkedUnits[state.id]! - _kFootstepUnits;
         _spawnFootstepPuff(baseX);
+        // The stride is heard as well as seen (§4, "footfall"): the puff is
+        // the foot hitting the floor, and half of them are the *near* foot.
+        final puffs = (_puffsSinceFootfall[state.id] ?? 0) + 1;
+        if (puffs >= _kFootfallEveryNthPuff) {
+          _puffsSinceFootfall[state.id] = 0;
+          _play(FightCue.stepTap);
+        } else {
+          _puffsSinceFootfall[state.id] = puffs;
+        }
       }
     } else if (state.action != FighterAction.walk) {
       _setWalkSpeed(anims, 1);

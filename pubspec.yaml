@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   flame: ^1.38.2
   flame_audio: ^2.12.2
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:

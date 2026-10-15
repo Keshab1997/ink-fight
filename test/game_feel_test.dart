@@ -906,6 +906,18 @@ void main() {
       preferredGap: 40,
     );
 
+    /// The recorded cues with the walking taps taken out. The footfall is a
+    /// bed under the whole fight — walking into range sprinkles taps through
+    /// any recording — so the impact groups assert on what is left.
+    List<FightCue> withoutFootfalls() => sounds.cues
+        .where((cue) => cue != FightCue.stepTap)
+        .toList(growable: false);
+
+    /// Every footfall recorded so far.
+    List<FightCue> footfalls() => sounds.cues
+        .where((cue) => cue == FightCue.stepTap)
+        .toList(growable: false);
+
     /// Walks the player in and lands one jab (the §2 pattern the haptics
     /// group uses; its copy is private to that group, so this one keeps the
     /// cues group self-contained).
@@ -949,8 +961,9 @@ void main() {
       landOneJab(game);
 
       // Exactly the round's sounds, in order: three counting beats, the
-      // swing's whoosh, then the impact the connect carries.
-      expect(sounds.cues, <FightCue>[
+      // swing's whoosh, then the impact the connect carries. (The footfalls
+      // of the walk-in are heard too; they are asserted on their own below.)
+      expect(withoutFootfalls(), <FightCue>[
         FightCue.countdownBlip,
         FightCue.countdownBlip,
         FightCue.countdownBlip,
@@ -964,13 +977,34 @@ void main() {
       pastCountdown(game);
       landOneHeavy(game);
 
-      expect(sounds.cues, <FightCue>[
+      expect(withoutFootfalls(), <FightCue>[
         FightCue.countdownBlip,
         FightCue.countdownBlip,
         FightCue.countdownBlip,
         FightCue.whooshHeavy,
         FightCue.hitHeavy,
       ]);
+    });
+
+    test('walking taps a footfall, and standing still is silent', () async {
+      final game = await loadedGame(sounds: sounds);
+      pastCountdown(game);
+
+      // A fighter on the spot makes no noise at all.
+      tick(game, 30);
+      expect(footfalls(), isEmpty, reason: 'standing still has no stride');
+
+      // ~0.67 s of walking at 78 u/s is ~52 units: two footstep puffs, and
+      // every second puff is the heard footfall.
+      game.setPlayerMoveAxis(1);
+      tick(game, 40);
+      game.setPlayerMoveAxis(0);
+      expect(footfalls(), hasLength(1));
+
+      // Stopping stops the taps with the feet.
+      final heard = footfalls().length;
+      tick(game, 40);
+      expect(footfalls(), hasLength(heard));
     });
 
     test('a guarded hit plays the clack and no impact', () async {

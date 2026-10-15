@@ -63,6 +63,11 @@ def highpass(signal: list[float], cutoff_hz: float) -> list[float]:
     return [s - l for s, l in zip(signal, low)]
 
 
+def bandpass(signal: list[float], low_hz: float, high_hz: float) -> list[float]:
+    """The band a phone speaker can actually reproduce: low-mid body."""
+    return highpass(lowpass(signal, high_hz), low_hz)
+
+
 def decay(length: int, tau_ms: float, attack_ms: float = 2.0) -> list[float]:
     """Exponential decay with a short linear attack, so nothing clicks."""
     tau = max(tau_ms, 1.0) / 1000.0 * RATE
@@ -176,18 +181,33 @@ def blocked() -> list[float]:
 
 
 def whoosh_light() -> list[float]:
-    air = highpass(noise_frames_count(170, 41), 500)
-    sweep = mul(tone(170, 900, 260), decay(_frames(170), 90, attack_ms=25.0))
-    shaped = mul(air, [0.9 * b for b in sweep])
-    return gain(shaped, 0.8)
+    # Body first, air second. The first version was noise above 500 Hz only —
+    # a phone speaker barely moves there, so a whiff (the swing that lands on
+    # nothing) came across as silence, and silence is the one thing a whiff
+    # must never sound like. The 180–1100 Hz band carries it on a phone, the
+    # top band keeps the cut on headphones, and the falling gust ties the two
+    # together into one gesture.
+    n = 240
+    body = mul(bandpass(noise_frames_count(n, 42), 180, 1100),
+               decay(_frames(n), 170, attack_ms=22.0))
+    air = mul(highpass(noise_frames_count(n, 41), 1200),
+              decay(_frames(n), 90, attack_ms=18.0))
+    gust = mul(tone(n, 560, 190), decay(_frames(n), 150, attack_ms=30.0))
+    return mix(body, gain(air, 0.5), gain(gust, 0.5))
 
 
 def whoosh_heavy() -> list[float]:
-    air = highpass(noise_frames_count(340, 43), 260)
-    sweep = mul(tone(340, 420, 120), decay(_frames(340), 150, attack_ms=40.0))
-    shaped = mul(air, [0.95 * b for b in sweep])
-    low = mul(lowpass(noise_frames_count(340, 47), 600), decay(_frames(340), 180))
-    return mix(gain(shaped, 0.85), gain(low, 0.5))
+    # The kick's sweep, same two bands an octave down and half a second of
+    # tail — unmistakably bigger than the jab's, still only air.
+    n = 380
+    body = mul(bandpass(noise_frames_count(n, 44), 130, 780),
+               decay(_frames(n), 200, attack_ms=28.0))
+    air = mul(highpass(noise_frames_count(n, 43), 900),
+              decay(_frames(n), 130, attack_ms=30.0))
+    gust = mul(tone(n, 380, 110), decay(_frames(n), 190, attack_ms=40.0))
+    low = mul(lowpass(noise_frames_count(n, 47), 400),
+              decay(_frames(n), 210, attack_ms=35.0))
+    return mix(body, gain(air, 0.45), gain(gust, 0.6), gain(low, 0.45))
 
 
 def step_tap() -> list[float]:
