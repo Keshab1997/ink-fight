@@ -683,6 +683,13 @@ class InkFightBattleGame extends FlameGame {
       _revealRoundEnd();
     }
     _updateEffects(fxDt);
+    _atmosphere.syncPhysicalWorld(
+      player: _match.player,
+      rival: _match.rival,
+      koSlowMo: _koSlowMoMs > 0,
+      koFallProgress: _koAnimMs / _kKnockdownTotalMs,
+      koSlowMoProgress: 1 - _koSlowMoMs / _kKoSlowMoMs,
+    );
   }
 
   /// §4/§5: the countdown blips once per counting beat — 3 · 2 · 1 — and the

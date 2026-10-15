@@ -6,6 +6,7 @@ import 'package:flame/components.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/effects/arena_atmosphere.dart';
+import 'package:inkfight/game/effects/arena_physical_paint.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
 import 'package:inkfight/game/rules/fighter_state.dart';
 import 'package:inkfight/game/rules/input_command.dart';
@@ -345,5 +346,295 @@ void main() {
       orderedEquals(before.sublist(start, end)),
     );
     expect(game.match.rival.health, 100);
+  });
+
+  group('physical arena paint', () {
+    const playerState = FighterState(
+      id: FighterId.player,
+      x: 110,
+      health: 100,
+      facing: 1,
+    );
+    const rivalState = FighterState(
+      id: FighterId.rival,
+      x: 190,
+      health: 100,
+      facing: -1,
+    );
+
+    ArenaPhysicalPaint physical() =>
+        ArenaPhysicalPaint()..layout(_viewport, _floor, _height);
+
+    void sync(
+      ArenaPhysicalPaint paint, {
+      bool slowMo = false,
+      double fall = 0,
+      double beat = 0,
+    }) {
+      paint.syncWorld(
+        player: playerState,
+        rival: rivalState,
+        koSlowMo: slowMo,
+        koFallProgress: fall,
+        koSlowMoProgress: beat,
+      );
+    }
+
+    SpriteAnimationComponent standing(double x) =>
+        SpriteAnimationComponent(size: Vector2.all(_height))
+          ..position = Vector2(x, _floor + _height * .121);
+
+    test('both shadows follow x, stay grounded, shrink/fade at apex, snap on landing', () {
+      final paint = physical();
+      final player = standing(352);
+      final rival = standing(608);
+      for (final pair in [
+        (FighterId.player, player),
+        (FighterId.rival, rival),
+      ]) {
+        final grounded = paint.shadowFor(pair.$1, pair.$2);
+        expect(grounded.bounds.center, ui.Offset(pair.$2.position.x, _floor));
+        expect(grounded.bounds.width / 2, lessThan(_height * .15));
+        expect(grounded.opacity, closeTo(.20, .001));
+        pair.$2.position.y -= _height * .16;
+        final apex = paint.shadowFor(pair.$1, pair.$2);
+        expect(apex.bounds.center.dy, _floor);
+        expect(apex.bounds.width, closeTo(grounded.bounds.width * .55, .001));
+        expect(apex.opacity, closeTo(grounded.opacity * .3, .001));
+        pair.$2.position.y += _height * .16;
+        pair.$2.scale.y = .94; // landing squash must not make a hovering shadow
+        expect(paint.shadowFor(pair.$1, pair.$2), grounded);
+        pair.$2.position.x += 70;
+        expect(
+          paint.shadowFor(pair.$1, pair.$2).bounds.center.dx,
+          pair.$2.position.x,
+        );
+      }
+    });
+
+    test('only KO losers fade their shadows, reset restores both, timeout never fades', () {
+      final paint = physical();
+      final player = standing(352);
+      final rival = standing(608);
+      sync(paint, fall: 1); // a phase/progress value alone must not invent a KO
+      expect(paint.shadowFor(FighterId.rival, rival).opacity, .20);
+      paint.onHit(
+        const HitEvent(
+          attacker: FighterId.player,
+          defender: FighterId.rival,
+          kind: HitKind.hit,
+          heavy: true,
+          x: 150,
+          ko: true,
+        ),
+        300,
+      );
+      sync(paint, slowMo: true, fall: .5, beat: .5);
+      expect(paint.shadowFor(FighterId.rival, rival).opacity, .10);
+      expect(paint.shadowFor(FighterId.player, player).opacity, .20);
+      sync(paint, fall: 1, beat: 1);
+      expect(paint.shadowFor(FighterId.rival, rival).opacity, 0);
+      paint.reset();
+      expect(paint.koCount, 0);
+      expect(paint.ringCount, 0);
+      expect(paint.shadowFor(FighterId.rival, rival).opacity, .20);
+    });
+
+    test('contact rings expand at contact, bounded 40/80 px, expire at 150 real ms', () async {
+      for (final event in [
+        hit(),
+        hit(heavy: true),
+        hit(kind: HitKind.blocked),
+      ]) {
+        final paint = physical();
+        paint.onHit(event, 300);
+        expect(paint.ringCount, 1);
+        final early = await pixels(
+          (c) => paint.renderBehindFighters(c, null, null),
+        );
+        paint.update(.13); // a held hit-stop pose does not stop this clock
+        final late = await pixels(
+          (c) => paint.renderBehindFighters(c, null, null),
+        );
+        ({int minX, int maxX, int minY, int maxY}) bounds(Uint8List data) {
+          var minX = 960, maxX = -1, minY = 540, maxY = -1;
+          for (var y = 0; y < 540; y++) {
+            for (var x = 0; x < 960; x++) {
+              if (data[(y * 960 + x) * 4 + 3] == 0) continue;
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+          return (minX: minX, maxX: maxX, minY: minY, maxY: maxY);
+        }
+
+        final a = bounds(early), b = bounds(late);
+        expect(b.maxX - b.minX, greaterThan(a.maxX - a.minX));
+        expect((b.minX - 480).abs(), lessThan(_height * .15));
+        expect(
+          (b.maxY - (_floor - _height * .43)).abs(),
+          lessThan(_height * .15),
+        );
+        final diameter = event.kind == HitKind.blocked
+            ? 24
+            : event.heavy
+            ? 80
+            : 40;
+        expect(b.maxX - b.minX, lessThanOrEqualTo(diameter + 2));
+        paint.update(.021);
+        expect(paint.ringCount, 0);
+        expect(
+          (await pixels((c) => paint.renderBehindFighters(c, null, null)))
+              .every((v) => v == 0),
+          isTrue,
+        );
+      }
+      final paint = physical();
+      paint.onHit(hit(kind: HitKind.whiff), 300);
+      expect(paint.ringCount, 0);
+      for (var i = 0; i < 100; i++) {
+        paint.onHit(hit(), 300);
+      }
+      expect(paint.ringCount, lessThanOrEqualTo(8));
+    });
+
+    test('KO floor starts at defender x, stays in .15h budget, paints only in slow-mo', () async {
+      final paint = physical();
+      paint.onHit(
+        const HitEvent(
+          attacker: FighterId.player,
+          defender: FighterId.rival,
+          kind: HitKind.hit,
+          heavy: true,
+          x: 150,
+          ko: true,
+        ),
+        300,
+      );
+      paint.update(.151); // discard contact ring to isolate KO floor paint
+      sync(paint, slowMo: true, fall: .1, beat: .5);
+      expect(paint.koCount, 1);
+      final bytes = await pixels(
+        (c) => paint.renderBehindFighters(c, null, null),
+      );
+      var count = 0;
+      for (var y = 0; y < 540; y++) {
+        for (var x = 0; x < 960; x++) {
+          final p = (y * 960 + x) * 4;
+          if (bytes[p + 3] == 0) continue;
+          count++;
+          expect((x - 190 / 300 * 960).abs(), lessThan(_height * .15));
+          expect((y - _floor).abs(), lessThan(_height * .15));
+          expect(bytes[p], bytes[p + 1]);
+          expect(bytes[p + 1], bytes[p + 2]);
+        }
+      }
+      expect(count, greaterThan(0));
+      sync(
+        paint,
+        fall: .15,
+        beat: 1,
+      ); // freeze/result: no floor paint or radial streaks
+      expect(
+        (await pixels((c) => paint.renderBehindFighters(c, null, null)))
+            .every((v) => v == 0),
+        isTrue,
+      );
+      paint.reset();
+      sync(paint, slowMo: true);
+      expect(
+        (await pixels((c) => paint.renderBehindFighters(c, null, null)))
+            .every((v) => v == 0),
+        isTrue,
+      );
+    });
+
+    test(
+      'paint behind fighters cannot overwrite their opaque sprite pixels',
+      () async {
+        final fx = atmosphere();
+        final recorder = ui.PictureRecorder();
+        fx.renderFloor(ui.Canvas(recorder), _viewport, _floor, _height);
+        recorder.endRecording().dispose();
+        final source = await raster(
+          (c) => c.drawRect(
+            const ui.Rect.fromLTWH(0, 0, 960, 540),
+            ui.Paint()..color = const ui.Color(0xFF101010),
+          ),
+        );
+        addTearDown(source.dispose);
+        final sprite = SpriteAnimationComponent(
+          animation: SpriteAnimation.spriteList([Sprite(source)], stepTime: 1),
+          size: Vector2(960, 540),
+        );
+        fx.onHit(
+          hit(kind: HitKind.blocked),
+          300,
+        ); // ring but no silhouette flash
+        final bytes = await pixels(
+          (c) => fx.renderFighters(c, sprite.render, sprite, null),
+        );
+        expect(
+          bytes.asMap().entries.every(
+            (entry) => entry.value == (entry.key % 4 == 3 ? 255 : 16),
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test('actual arena jump and KO render grounding and cinematic without changing clocks', () async {
+      final game = InkFightBattleGame();
+      game.hapticsEnabled = false;
+      game.onGameResize(Vector2(960, 540));
+      await game.onLoad();
+      await game.ready();
+      final directory = Directory('.agent-screens')
+        ..createSync(recursive: true);
+      Future<void> capture(String name) async {
+        final image = await raster(game.render);
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        File('${directory.path}/$name.png')
+            .writeAsBytesSync(bytes!.buffer.asUint8List());
+        image.dispose();
+      }
+
+      for (var i = 0; i < 130; i++) {
+        game.update(1 / 60);
+      }
+      await capture('ground-shadows');
+      game.sendPlayerAction(InputAction.jump);
+      for (var i = 0; i < 20; i++) {
+        game.update(1 / 60);
+      }
+      expect(game.match.player.isAirborne, isTrue);
+      await capture('ground-shadow-apex');
+      for (var i = 0; i < 4200 && !game.match.isFinished; i++) {
+        game.update(1 / 60);
+      }
+      expect(game.match.isFinished, isTrue);
+      expect(game.match.player.health, 0);
+      expect(game.roundEndCardVisible, isFalse);
+      for (var i = 0; i < 8; i++) {
+        game.update(1 / 60);
+      }
+      await capture('ko-floor-slowmo');
+      expect(game.roundEndCardVisible, isFalse);
+      for (var i = 0; i < 15; i++) {
+        game.update(1 / 60);
+      }
+      await capture('ko-floor-freeze');
+      expect(game.roundEndCardVisible, isFalse);
+      for (var i = 0; i < 70; i++) {
+        game.update(1 / 60);
+      }
+      expect(game.roundEndCardVisible, isTrue);
+      await capture('ko-floor-settled');
+      game.restartMatch();
+      expect(game.match.player.health, 100);
+      await capture('ground-shadows-rematch');
+    });
   });
 }

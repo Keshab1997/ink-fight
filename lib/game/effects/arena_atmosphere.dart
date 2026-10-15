@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../rules/fighter_state.dart';
 import '../rules/match_controller.dart';
 import '../rules/match_rules.dart';
+import 'arena_physical_paint.dart';
 
 /// Paint only: the paper remembers connects, never guesses them from a pose.
 /// All geometry is relative to the sprite height. Stains sit behind fighters,
@@ -29,6 +30,7 @@ class ArenaAtmosphere {
   // Recorded once, not randomised in render or update. Unit coordinates keep
   // the same fibres pinned to the page even when the viewport is resized.
   ui.Picture? _grain;
+  final ArenaPhysicalPaint _physical = ArenaPhysicalPaint();
   final math.Random _random = math.Random(71);
   final List<_FloorDot> _dots = <_FloorDot>[];
   final Map<FighterId, double> _flash = <FighterId, double>{};
@@ -79,6 +81,7 @@ class ArenaAtmosphere {
   /// Event x remains in arena coordinates; resize maps existing stains onto
   /// the same place on the paper. Only confirmed hits flash the defender.
   void onHit(HitEvent event, double arenaWidth) {
+    _physical.onHit(event, arenaWidth);
     if (event.kind == HitKind.whiff) {
       return;
     }
@@ -117,6 +120,7 @@ class ArenaAtmosphere {
   /// Real time, independent of hit-stop/KO clocks: the 60 ms flash snaps back
   /// even while the hurt pose is held. Call before consuming this frame's hits.
   void update(double dt) {
+    _physical.update(dt);
     final ms = math.max(0.0, dt * 1000);
     for (final id in FighterId.values) {
       _flash[id] = math.max(0.0, (_flash[id] ?? 0) - ms);
@@ -129,12 +133,28 @@ class ArenaAtmosphere {
     _dots.removeWhere((dot) => dot.fadeMs >= _retireMs);
   }
 
+  /// Only observes the arena's existing KO gates, never starts a cinematic.
+  void syncPhysicalWorld({
+    required FighterState player,
+    required FighterState rival,
+    required bool koSlowMo,
+    required double koFallProgress,
+    required double koSlowMoProgress,
+  }) => _physical.syncWorld(
+    player: player,
+    rival: rival,
+    koSlowMo: koSlowMo,
+    koFallProgress: koFallProgress,
+    koSlowMoProgress: koSlowMoProgress,
+  );
+
   void renderFloor(
     ui.Canvas canvas,
     ui.Size viewport,
     double floorY,
     double fighterHeight,
   ) {
+    _physical.layout(viewport, floorY, fighterHeight);
     if (fighterHeight <= 0 || viewport.isEmpty) {
       return;
     }
@@ -210,6 +230,7 @@ class ArenaAtmosphere {
     SpriteAnimationComponent? player,
     SpriteAnimationComponent? rival,
   ) {
+    _physical.renderBehindFighters(canvas, player, rival);
     final playerFilter = player?.paint.colorFilter;
     final rivalFilter = rival?.paint.colorFilter;
     if (player != null && _isFlashing(FighterId.player)) {
@@ -234,6 +255,7 @@ class ArenaAtmosphere {
   }
 
   void reset() {
+    _physical.reset();
     _dots.clear();
     _flash.clear();
   }
