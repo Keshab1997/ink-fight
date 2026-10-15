@@ -35,6 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   flame: ^1.38.2
+  flame_audio: ^2.12.2
 
 dev_dependencies:
   flutter_test:
@@ -81,6 +82,7 @@ flutter:
     - assets/characters/runtime/bot_crimson_rival/victory/
     - assets/characters/runtime/bot_crimson_rival/knockdown/
     - assets/characters/runtime/bot_crimson_rival/defeat/
+    - assets/audio/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
