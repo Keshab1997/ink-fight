@@ -83,6 +83,9 @@ flutter:
     - assets/characters/runtime/bot_crimson_rival/knockdown/
     - assets/characters/runtime/bot_crimson_rival/defeat/
     - assets/audio/
+    # Home-screen hero art: the delivered runtime poses, cropped and sized for
+    # the menu rather than for the arena. See tool/make_home_hero.py.
+    - assets/ui/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
