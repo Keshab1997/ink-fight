@@ -962,7 +962,11 @@ void main() {
       observe(fx, sprite, player);
       final fallen = player.copyWith(action: FighterAction.knockdown);
       fx.onHit(event, 300);
+      final contactMarks = fx.markCount;
+      sprite.position.x = 500; // rendered travel, NOT state.x or event midpoint
       observe(fx, sprite, fallen);
+      expect(fx.activeTrailCount, 1);
+      expect(fx.markCount, greaterThan(contactMarks));
       expect(
         fx.scarCount,
         0,
@@ -971,8 +975,23 @@ void main() {
       sprite.animationTicker!.setToLast();
       // Looping test cycle is not done: transition out of knockdown supplies
       // the same authoritative landing fallback used on a low-frame-rate device.
+      sprite.position.x = 520;
       observe(fx, sprite, player);
       expect(fx.scarCount, 1);
+      expect(fx.activeTrailCount, 0);
+      expect(
+        fx.markCount,
+        contactMarks + 3,
+        reason: 'three connected fragments from standing x=480 to the actual scar x=520',
+      );
+      // Resume the original persistence/budget fixture at a shared anchor;
+      // its persistent contact dots must not be confused with a travel smear.
+      fx.reset();
+      sprite.position.x = 480;
+      observe(fx, sprite, player);
+      fx.onHit(event, 300);
+      observe(fx, sprite, fallen);
+      observe(fx, sprite, player);
       fx.update(120);
       expect(fx.scarCount, 1, reason: 'outlives ordinary fading effects');
       for (var i = 0; i < 5; i++) {
@@ -1299,8 +1318,10 @@ void main() {
         final immediate = fx.markCount;
         expect(fx.dropletCount, 3);
         advance(fx, .8);
-        expect(fx.dropletCount, 0);
-        expect(fx.markCount, immediate + 3);
+        // Three contact drops and the first carried drip have landed; the
+        // second carried drip is still falling from the hurt fighter.
+        expect(fx.dropletCount, 1);
+        expect(fx.markCount, immediate + 4);
         expect(
           fx.markOpacities.skip(immediate).every((a) => a > 0 && a <= .36),
           isTrue,
@@ -1442,6 +1463,13 @@ void main() {
         game.update(1 / 60);
       }
       game.setPlayerMoving(false);
+      game.match.submit(
+        const InputCommand(
+          fighter: FighterId.rival,
+          action: InputAction.heavyKick,
+          sequence: 1000,
+        ),
+      );
       game.sendPlayerAction(InputAction.heavyKick);
       var hit = false;
       for (var i = 0; i < 60; i++) {
@@ -1452,6 +1480,11 @@ void main() {
         }
       }
       expect(hit, isTrue);
+      expect(
+        game.match.rival.isKnockedDown,
+        isTrue,
+        reason: 'real counter-hit, not a painted or forged knockdown',
+      );
       Directory('.agent-screens').createSync(recursive: true);
       Future<void> capture(String name) async {
         final p = game.match.player, r = game.match.rival;
@@ -1478,6 +1511,15 @@ void main() {
         game.update(1 / 60);
       }
       await capture('ink-gravity-landed');
+      await capture('carried-ink-fall-trail');
+      for (var i = 0; i < 16; i++) {
+        game.update(1 / 60);
+      }
+      await capture('carried-ink-moving-body');
+      for (var i = 0; i < 18; i++) {
+        game.update(1 / 60);
+      }
+      await capture('carried-ink-last-drip');
     });
   });
 
@@ -1523,4 +1565,417 @@ void main() {
       }
     },
   );
+  group('fighters carry their ink', () {
+    const p = FighterState(
+      id: FighterId.player,
+      x: 110,
+      health: 100,
+      facing: 1,
+    );
+    const r = FighterState(
+      id: FighterId.rival,
+      x: 190,
+      health: 100,
+      facing: -1,
+    );
+    const knockdown = HitEvent(
+      attacker: FighterId.player,
+      defender: FighterId.rival,
+      kind: HitKind.hit,
+      heavy: true,
+      x: 150,
+      ko: false,
+      knockdown: true,
+    );
+    ArenaInkGravity gravity() => ArenaInkGravity()..layout(960, _height);
+    void observe(
+      ArenaInkGravity fx, {
+      double x = .7,
+      FighterState rival = r,
+      bool done = false,
+      double fall = 0,
+    }) => fx.observeCarriers(
+      p,
+      rival,
+      MatchRules.standard,
+      rivalXShare: x,
+      rivalFallComplete: done,
+      rivalFallProgress: fall,
+    );
+
+    test('only confirmed heavy starts a source; new hits replace, never stack; two fighters and reset', () {
+      final fx = gravity();
+      observe(fx);
+      fx.onHit(hit(), 300);
+      fx.onHit(hit(heavy: true, kind: HitKind.blocked), 300);
+      fx.onHit(hit(heavy: true, kind: HitKind.whiff), 300);
+      expect(fx.activeDripCount, 0);
+      for (var i = 0; i < 10; i++) {
+        fx.onHit(hit(heavy: true), 300);
+        fx.advance(.21, .21, (_) {});
+        expect(fx.activeDripCount, 1);
+        expect(
+          fx.droplets.where((d) => d.radius == .0035),
+          isEmpty,
+          reason: 'a replacement must remove the previous release schedule',
+        );
+        expect(fx.dropletCount, lessThanOrEqualTo(12));
+      }
+      fx.onHit(hit(heavy: true, kind: HitKind.blocked), 300);
+      fx.onHit(hit(heavy: true, kind: HitKind.whiff), 300);
+      fx.advance(.011, .011, (_) {});
+      expect(
+        fx.droplets.where((d) => d.radius == .0035),
+        hasLength(1),
+        reason: 'blocks and whiffs do not re-arm OR cancel a confirmed source',
+      );
+      fx.onHit(hit(), 300);
+      expect(
+        fx.activeDripCount,
+        0,
+        reason: 'light replaces with no new sequence',
+      );
+      fx.onHit(hit(heavy: true), 300);
+      fx.onHit(
+        const HitEvent(
+          attacker: FighterId.rival,
+          defender: FighterId.player,
+          kind: HitKind.hit,
+          heavy: true,
+          x: 150,
+          ko: false,
+        ),
+        300,
+      );
+      expect(fx.activeDripCount, 2);
+      fx.reset();
+      expect(fx.activeDripCount, 0);
+      expect(fx.activeTrailCount, 0);
+      expect(fx.dropletCount, 0);
+      fx.advance(10, 10, (_) => fail('reset leaked a delayed release'));
+    });
+
+    test('drips interpolate the moving rendered body, never the event midpoint; release age is exact', () {
+      final fx = gravity();
+      observe(fx);
+      fx.onHit(hit(heavy: true), 300); // contact .5, defender rendered at .7
+      observe(fx, x: .9);
+      fx.advance(.4, .4, (_) {});
+      final drip = fx.droplets.singleWhere((d) => d.radius == .0035);
+      expect(
+        drip.originX,
+        closeTo(.7 + .2 * (.22 / .4) + .11 * _height / 960, 1e-12),
+      );
+      expect(drip.dx, closeTo(.08 * .18, 1e-12));
+      expect(drip.y, closeTo(-.26 + .025 * .18 + 1.4 * .18 * .18, 1e-12));
+      expect((drip.originX - .5).abs(), greaterThan(.3));
+      expect(fx.activeDripCount, 1);
+    });
+
+    test('four releases self-end at 1.3 effect seconds; freeze/KO use existing clock; exact floor root', () {
+      final fx = gravity();
+      observe(fx);
+      fx.onHit(hit(heavy: true), 300);
+      final landings = <({double time, InkLanding mark})>[];
+      var effectTime = 0.0;
+      void step(double effect, double real) {
+        effectTime += effect;
+        fx.advance(effect, real, (mark) {
+          landings.add((
+            time: effectTime - mark.alreadyAgedMs / 1000 * effect / real,
+            mark: mark,
+          ));
+        });
+      }
+
+      step(.21, .84); // KO quarter-speed: no release at .21, despite .84 real
+      expect(fx.droplets.where((d) => d.radius == .0035), isEmpty);
+      final held = fx.droplets;
+      step(0, 10);
+      expect(fx.droplets, held);
+      expect(fx.activeDripCount, 1);
+      step(.02, .08);
+      expect(fx.droplets.where((d) => d.radius == .0035), hasLength(1));
+      step(1.07, 1.07);
+      expect(fx.activeDripCount, 0);
+      step(.6, .6);
+      expect(fx.dropletCount, 0);
+      final carried = landings
+          .where((d) => d.mark.radiusShare == .0035)
+          .toList();
+      expect(carried, hasLength(4));
+      final flight = (-.025 + math.sqrt(.025 * .025 + 2 * 2.8 * .26)) / 2.8;
+      for (var i = 0; i < 4; i++) {
+        expect(
+          carried[i].time,
+          closeTo([.22, .58, .94, 1.30][i] + flight, 1e-12),
+        );
+        expect(
+          carried[i].mark.xShare,
+          closeTo(.7 + (i.isEven ? .11 : -.11) * _height / 960, 1e-12),
+        );
+      }
+      step(10, 10);
+      expect(
+        landings,
+        hasLength(7),
+        reason: 'no lingering source and no double landing',
+      );
+      // Even without a supplied body snapshot, an unobserved source expires.
+      final unobserved = gravity()..onHit(hit(heavy: true), 300);
+      unobserved.advance(2, 2, (_) {});
+      expect(unobserved.activeDripCount, 0);
+    });
+
+    test('release height follows jump lift and delivered fall pose, without touching state or sprites', () {
+      final jumping = gravity(), fallen = gravity();
+      final airborne = r.copyWith(
+        action: FighterAction.jump,
+        jumpRemainingMs: MatchRules.standard.jumpMs ~/ 2,
+      );
+      observe(jumping, rival: airborne);
+      jumping.onHit(hit(heavy: true), 300);
+      observe(jumping, rival: airborne);
+      jumping.advance(.22, .22, (_) {});
+      expect(
+        jumping.droplets.singleWhere((d) => d.radius == .0035).y,
+        closeTo(-.42, 1e-12),
+      );
+      observe(
+        fallen,
+        rival: r.copyWith(action: FighterAction.knockdown),
+        fall: 1,
+      );
+      fallen.onHit(knockdown, 300);
+      observe(
+        fallen,
+        rival: r.copyWith(action: FighterAction.knockdown),
+        fall: 1,
+      );
+      fallen.advance(.22, .22, (_) {});
+      expect(
+        fallen.droplets.singleWhere((d) => d.radius == .0035).y,
+        closeTo(-.055, 1e-12),
+      );
+      expect(airborne.jumpRemainingMs, MatchRules.standard.jumpMs ~/ 2);
+      expect(r.action, FighterAction.idle);
+    });
+
+    test('linear moving source and interleaved knockdown deposits are frame-partition deterministic', () {
+      List<({double time, InkLanding mark})> run(int frames) {
+        final fx = gravity();
+        observe(fx, x: .6);
+        fx.onHit(knockdown, 300);
+        final records = <({double time, InkLanding mark})>[];
+        const duration = 1.9;
+        for (var i = 1; i <= frames; i++) {
+          final t = duration * i / frames;
+          observe(
+            fx,
+            x: .6 + .22 * _height / 960 * t / duration,
+            rival: r.copyWith(action: FighterAction.knockdown),
+            done: i == frames,
+          );
+          fx.advance(duration / frames, duration / frames, (mark) {
+            records.add((time: t - mark.alreadyAgedMs / 1000, mark: mark));
+          });
+        }
+        expect(fx.activeDripCount, 0);
+        expect(fx.activeTrailCount, 0);
+        return records;
+      }
+
+      final coarse = run(1), fine = run(190), replay = run(190);
+      expect(coarse, hasLength(13)); // four contact, four carried, five trail
+      expect(fine, hasLength(coarse.length));
+      for (var i = 0; i < coarse.length; i++) {
+        expect(coarse[i].time, closeTo(fine[i].time, 1e-10));
+        expect(coarse[i].mark.xShare, closeTo(fine[i].mark.xShare, 1e-10));
+        expect(
+          coarse[i].mark.widthShare ?? 0,
+          closeTo(fine[i].mark.widthShare ?? 0, 1e-10),
+        );
+        expect(fine[i].mark.xShare, replay[i].mark.xShare);
+        expect(fine[i].time, replay[i].time);
+      }
+    });
+
+    test('only confirmed knockdown draws along actual body travel; flushes at fall point, then stops', () {
+      final fx = gravity();
+      observe(fx, x: .7);
+      fx.onHit(hit(heavy: true), 300);
+      expect(fx.activeTrailCount, 0);
+      // A pose alone and an invalid blocked/whiff knockdown never draw trails.
+      for (final kind in [HitKind.blocked, HitKind.whiff]) {
+        fx.onHit(
+          HitEvent(
+            attacker: FighterId.player,
+            defender: FighterId.rival,
+            kind: kind,
+            heavy: true,
+            x: 150,
+            ko: false,
+            knockdown: true,
+          ),
+          300,
+        );
+      }
+      final marks = <InkLanding>[];
+      final down = r.copyWith(action: FighterAction.knockdown);
+      observe(fx, x: .7 + .09 * _height / 960, rival: down);
+      fx.advance(.1, .1, marks.add);
+      expect(marks.where((m) => m.widthShare != null), isEmpty);
+      observe(fx, x: .7);
+      fx.advance(.01, .01, marks.add);
+      fx.onHit(knockdown, 300);
+      expect(fx.activeTrailCount, 1);
+      observe(fx, x: .7 + .10 * _height / 960, rival: down);
+      fx.advance(.1, .1, marks.add);
+      expect(marks.where((m) => m.widthShare != null), hasLength(2));
+      observe(fx, x: .7 + .10 * _height / 960, rival: down);
+      fx.advance(.1, .1, marks.add);
+      expect(
+        marks.where((m) => m.widthShare != null),
+        hasLength(2),
+        reason: 'stationary body never floods the pool',
+      );
+      observe(fx, x: .7 + .12 * _height / 960, rival: down, done: true);
+      fx.advance(.1, .1, marks.add);
+      final trail = marks.where((m) => m.widthShare != null).toList();
+      expect(trail, hasLength(3));
+      expect(trail.first.xShare, closeTo(.7 + .0225 * _height / 960, 1e-12));
+      final last = trail.last;
+      expect(
+        last.xShare + (last.widthShare! - .008) * .5 * _height / 960,
+        closeTo(.7 + .12 * _height / 960, 1e-12),
+      );
+      expect(
+        trail.every(
+          (m) =>
+              m.opacity == .20 &&
+              m.radiusShare == .005 &&
+              m.widthShare! <= .0531,
+        ),
+        isTrue,
+      );
+      expect(fx.activeTrailCount, 0);
+      observe(fx, x: .95);
+      fx.advance(2, 2, marks.add);
+      expect(marks.where((m) => m.widthShare != null), hasLength(3));
+    });
+
+    test('long/reversed travel stays bounded to six fragments; reset removes pending trail', () {
+      final fx = gravity();
+      observe(fx, x: .4);
+      fx.onHit(knockdown, 300);
+      observe(fx, x: .9, rival: r.copyWith(action: FighterAction.knockdown));
+      final marks = <InkLanding>[];
+      fx.advance(.1, .1, marks.add);
+      final trail = marks.where((m) => m.widthShare != null).toList();
+      expect(trail, hasLength(6));
+      expect(
+        trail.last.xShare + trail.last.widthShare! * .5 * _height / 960 - .4,
+        lessThan(.28 * _height / 960),
+      );
+      expect(fx.activeTrailCount, 0);
+      fx.onHit(knockdown, 300);
+      observe(fx, x: .2, rival: r.copyWith(action: FighterAction.knockdown));
+      marks.clear();
+      fx.advance(.1, .1, marks.add);
+      final reverse = marks.where((m) => m.widthShare != null).toList();
+      expect(reverse, hasLength(6));
+      expect(reverse.last.xShare, lessThan(reverse.first.xShare));
+      expect(reverse.map((m) => m.widthShare), trail.map((m) => m.widthShare));
+      fx.onHit(knockdown, 300);
+      fx.reset();
+      observe(fx, x: .2, rival: r.copyWith(action: FighterAction.knockdown));
+      fx.advance(2, 2, (_) => fail('reset leaked a trail or drop'));
+    });
+
+    test('body trails and carried landings share the existing cap/fade/reset and repeat pixels exactly', () async {
+      Future<(Uint8List, ArenaAtmosphere)> run() async {
+        final fx = atmosphere();
+        await pixels((c) => fx.renderFloor(c, _viewport, _floor, _height));
+        void step(FighterState rival, double dt) {
+          fx.update(dt);
+          fx.advanceRoom(
+            realDt: dt,
+            effectDt: dt,
+            roundEnd: false,
+            player: p,
+            rival: rival,
+            rules: MatchRules.standard,
+          );
+        }
+
+        step(r, 0);
+        for (var n = 0; n < 12; n++) {
+          fx.onHit(knockdown, 300);
+          for (var i = 1; i <= 10; i++) {
+            step(
+              r.copyWith(x: 190 + i * .5, action: FighterAction.knockdown),
+              .025,
+            );
+            expect(fx.markCount, lessThanOrEqualTo(24));
+            expect(fx.dropletCount, lessThanOrEqualTo(12));
+            expect(fx.activeDripCount, lessThanOrEqualTo(1));
+          }
+          step(r.copyWith(x: 195), .01);
+          step(r, 0);
+        }
+        expect(fx.activeTrailCount, 0);
+        final data = await pixels(
+          (c) => fx.renderFloor(c, _viewport, _floor, _height),
+        );
+        return (data, fx);
+      }
+
+      final (a, fx) = await run();
+      final (b, _) = await run();
+      expect(a, orderedEquals(b));
+      expect(fx.markCount, greaterThan(0));
+      for (var y = 0; y < 540; y++) {
+        for (var x = 0; x < 960; x++) {
+          final i = (y * 960 + x) * 4;
+          if (a[i + 3] == 0) continue;
+          expect(
+            y,
+            greaterThan(290),
+            reason: 'body ink stays well below the HUD',
+          );
+          final monochrome = a[i] == a[i + 1] && a[i + 1] == a[i + 2];
+          final crimson = a[i] >= a[i + 2] && a[i + 2] >= a[i + 1];
+          expect(
+            monochrome || crimson,
+            isTrue,
+            reason: 'only ink plus the existing crimson contact residue',
+          );
+        }
+      }
+      fx.onHit(
+        hit(),
+        300,
+      ); // no more scheduled releases; only shared fading residue remains
+      fx.advanceRoom(
+        realDt: 2,
+        effectDt: 2,
+        roundEnd: false,
+        player: p,
+        rival: r,
+        rules: MatchRules.standard,
+      );
+      fx.update(2);
+      expect(
+        fx.markOpacities.every((a) => a == .48),
+        isTrue,
+        reason:
+            'trail fragments and landed droplets expire in the existing pool',
+      );
+      fx.reset();
+      expect(fx.markCount, 0);
+      expect(fx.activeDripCount, 0);
+      expect(fx.activeTrailCount, 0);
+      expect(fx.dropletCount, 0);
+    });
+  });
 }

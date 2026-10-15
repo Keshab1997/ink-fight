@@ -162,6 +162,30 @@ class ArenaAtmosphere {
     final height = playerSprite?.size.y ?? rivalSprite?.size.y ?? 0;
     if (viewportWidth > 0 && height > 0) _gravity.layout(viewportWidth, height);
     _gravity.observeFacing(player, rival);
+    double fallProgress(SpriteAnimationComponent? sprite) {
+      final frames = sprite?.animation?.frames.length ?? 1;
+      return frames <= 1
+          ? 0
+          : (sprite?.animationTicker?.currentIndex ?? 0) / (frames - 1);
+    }
+
+    _gravity.observeCarriers(
+      player,
+      rival,
+      rules,
+      playerXShare: playerSprite != null && viewportWidth > 0
+          ? playerSprite.position.x / viewportWidth
+          : null,
+      rivalXShare: rivalSprite != null && viewportWidth > 0
+          ? rivalSprite.position.x / viewportWidth
+          : null,
+      playerFallProgress: fallProgress(playerSprite),
+      rivalFallProgress: fallProgress(rivalSprite),
+      playerFallComplete:
+          movementDt > 0 && (playerSprite?.animationTicker?.done() ?? false),
+      rivalFallComplete:
+          movementDt > 0 && (rivalSprite?.animationTicker?.done() ?? false),
+    );
     _gravity.advance(effectDt, realDt, _leaveInkLanding);
     _room.advanceAir(realDt: realDt, effectDt: effectDt, roundEnd: roundEnd);
     void plant(FootPlant plant) {
@@ -228,7 +252,8 @@ class ArenaAtmosphere {
           dyShare: 0,
           radiusShare: landing.radiusShare,
           colour: _ink,
-          opacity: .36,
+          opacity: landing.opacity,
+          widthShare: landing.widthShare,
           fadeLifeMs: 1500,
         )
         ..retiring = true
@@ -435,6 +460,12 @@ class ArenaAtmosphere {
   bool isFlashing(FighterId id) => _isFlashing(id);
 
   bool _isFlashing(FighterId id) => (_flash[id] ?? 0) > 0;
+
+  @visibleForTesting
+  int get activeDripCount => _gravity.activeDripCount;
+
+  @visibleForTesting
+  int get activeTrailCount => _gravity.activeTrailCount;
 
   @visibleForTesting
   int get dropletCount => _gravity.dropletCount;
