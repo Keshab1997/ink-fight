@@ -8,6 +8,7 @@ import '../rules/fighter_state.dart';
 import '../rules/match_controller.dart';
 import '../rules/match_rules.dart';
 import 'arena_physical_paint.dart';
+import 'arena_room.dart';
 
 /// Paint only: the paper remembers connects, never guesses them from a pose.
 /// All geometry is relative to the sprite height. Stains sit behind fighters,
@@ -30,6 +31,7 @@ class ArenaAtmosphere {
   // Recorded once, not randomised in render or update. Unit coordinates keep
   // the same fibres pinned to the page even when the viewport is resized.
   ui.Picture? _grain;
+  final ArenaRoom _room = ArenaRoom();
   final ArenaPhysicalPaint _physical = ArenaPhysicalPaint();
   final math.Random _random = math.Random(71);
   final List<_FloorDot> _dots = <_FloorDot>[];
@@ -82,6 +84,7 @@ class ArenaAtmosphere {
   /// the same place on the paper. Only confirmed hits flash the defender.
   void onHit(HitEvent event, double arenaWidth) {
     _physical.onHit(event, arenaWidth);
+    _room.onHit(event);
     if (event.kind == HitKind.whiff) {
       return;
     }
@@ -121,6 +124,7 @@ class ArenaAtmosphere {
   /// even while the hurt pose is held. Call before consuming this frame's hits.
   void update(double dt) {
     _physical.update(dt);
+    _room.updateClocks(dt);
     final ms = math.max(0.0, dt * 1000);
     for (final id in FighterId.values) {
       _flash[id] = math.max(0.0, (_flash[id] ?? 0) - ms);
@@ -130,7 +134,42 @@ class ArenaAtmosphere {
         dot.fadeMs += ms;
       }
     }
-    _dots.removeWhere((dot) => dot.fadeMs >= _retireMs);
+    _dots.removeWhere((dot) => dot.fadeMs >= dot.fadeLifeMs);
+  }
+
+  /// Air follows the view clock; a boundary response is only presentation.
+  void advanceRoom({
+    required double realDt,
+    required double effectDt,
+    required bool roundEnd,
+    required FighterState player,
+    required FighterState rival,
+    required MatchRules rules,
+  }) {
+    _room.advanceAir(realDt: realDt, effectDt: effectDt, roundEnd: roundEnd);
+    _room.observeWalls(player, rival, rules, (fighter) {
+      if (_dots.length == maxMarks) _dots.removeAt(0);
+      _dots.add(
+        _FloorDot(
+          xShare: fighter.x / rules.arenaWidth,
+          dxShare: 0,
+          dyShare: 0,
+          radiusShare: .008,
+          colour: _grey,
+          opacity: .30,
+          smear: true,
+          fadeLifeMs: 450,
+        )..retiring = true,
+      );
+    });
+  }
+
+  void applyRoomResponse(ui.Canvas canvas, double fighterHeight) =>
+      canvas.translate(_room.shakeOffset(fighterHeight), 0);
+
+  void renderRoom(ui.Canvas canvas, ui.Size viewport, double floorY, double h) {
+    _room.renderDepth(canvas, viewport, floorY, h);
+    _room.renderDust(canvas, viewport, floorY, h);
   }
 
   /// Only observes the arena's existing KO gates, never starts a cinematic.
@@ -167,12 +206,15 @@ class ArenaAtmosphere {
             dot.xShare * viewport.width + dot.dxShare * fighterHeight,
             floorY + dot.dyShare * fighterHeight,
           ),
-          width: dot.radiusShare * fighterHeight * 2,
+          width: dot.smear
+              ? fighterHeight * .12
+              : dot.radiusShare * fighterHeight * 2,
           height: dot.radiusShare * fighterHeight * 1.1,
         ),
         ui.Paint()
           ..color = dot.colour.withValues(
-            alpha: dot.opacity * (1 - dot.fadeMs / _retireMs).clamp(0.0, 1.0),
+            alpha:
+                dot.opacity * (1 - dot.fadeMs / dot.fadeLifeMs).clamp(0.0, 1.0),
           ),
       );
     }
@@ -256,6 +298,7 @@ class ArenaAtmosphere {
 
   void reset() {
     _physical.reset();
+    _room.reset();
     _dots.clear();
     _flash.clear();
   }
@@ -271,7 +314,7 @@ class ArenaAtmosphere {
   @visibleForTesting
   List<double> get markOpacities => <double>[
     for (final dot in _dots)
-      dot.opacity * (1 - dot.fadeMs / _retireMs).clamp(0.0, 1.0),
+      dot.opacity * (1 - dot.fadeMs / dot.fadeLifeMs).clamp(0.0, 1.0),
   ];
 }
 
@@ -283,6 +326,8 @@ class _FloorDot {
     required this.radiusShare,
     required this.colour,
     required this.opacity,
+    this.smear = false,
+    this.fadeLifeMs = ArenaAtmosphere._retireMs,
   });
 
   final double xShare;
@@ -291,6 +336,8 @@ class _FloorDot {
   final double radiusShare;
   final ui.Color colour;
   final double opacity;
+  final bool smear;
+  final double fadeLifeMs;
   bool retiring = false;
   double fadeMs = 0;
 }

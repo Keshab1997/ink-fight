@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/effects/arena_atmosphere.dart';
 import 'package:inkfight/game/effects/arena_physical_paint.dart';
+import 'package:inkfight/game/effects/arena_room.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
 import 'package:inkfight/game/rules/fighter_state.dart';
 import 'package:inkfight/game/rules/input_command.dart';
@@ -635,6 +636,203 @@ void main() {
       game.restartMatch();
       expect(game.match.player.health, 100);
       await capture('ground-shadows-rematch');
+    });
+  });
+
+  group('room physics (paint only)', () {
+    const player = FighterState(
+      id: FighterId.player,
+      x: 110,
+      health: 100,
+      facing: 1,
+    );
+    const rival = FighterState(
+      id: FighterId.rival,
+      x: 190,
+      health: 100,
+      facing: -1,
+    );
+    const rules = MatchRules.standard;
+
+    test('eight deterministic specks move at one quarter speed in KO and freeze on hold', () {
+      final normal = ArenaRoom(), slow = ArenaRoom();
+      final initial = normal.dustPositions;
+      expect(initial, hasLength(8));
+      expect(slow.dustPositions, initial);
+      normal.advanceAir(realDt: .2, effectDt: .2, roundEnd: false);
+      slow.advanceAir(realDt: .2, effectDt: .05, roundEnd: false);
+      for (var i = 0; i < 8; i++) {
+        final normalDelta = normal.dustPositions[i] - initial[i];
+        final slowDelta = slow.dustPositions[i] - initial[i];
+        expect(slowDelta.dx, closeTo(normalDelta.dx * .25, 1e-10));
+        expect(slowDelta.dy, closeTo(normalDelta.dy * .25, 1e-10));
+      }
+      final held = slow.dustPositions;
+      slow.advanceAir(realDt: .2, effectDt: 0, roundEnd: false);
+      expect(slow.dustPositions, held);
+      slow.reset();
+      expect(slow.dustPositions, initial);
+    });
+
+    test(
+      'round-end dust settles toward floor and horizontal drift damps away',
+      () {
+        final room = ArenaRoom();
+        final initial = room.dustPositions;
+        room.advanceAir(realDt: .2, effectDt: .2, roundEnd: true);
+        final first = room.dustPositions;
+        for (var i = 0; i < 8; i++) {
+          expect(first[i].dy, greaterThan(initial[i].dy));
+        }
+        for (var i = 0; i < 30; i++) {
+          room.advanceAir(realDt: .1, effectDt: .1, roundEnd: true);
+        }
+        final settled = room.dustPositions;
+        room.advanceAir(realDt: .2, effectDt: .2, roundEnd: true);
+        for (var i = 0; i < 8; i++) {
+          expect(room.dustPositions[i].dy, 1);
+          expect(
+            (room.dustPositions[i].dx - settled[i].dx).abs(),
+            lessThan(1e-6),
+          );
+        }
+      },
+    );
+
+    test('only a confirmed heavy hit accelerates air, exactly 200 ms then normal drift', () {
+      final normal = ArenaRoom(), gust = ArenaRoom();
+      gust.onHit(hit(heavy: true, kind: HitKind.blocked));
+      gust.onHit(hit(heavy: true, kind: HitKind.whiff));
+      normal.advanceAir(realDt: .1, effectDt: .1, roundEnd: false);
+      gust.advanceAir(realDt: .1, effectDt: .1, roundEnd: false);
+      expect(gust.dustPositions, normal.dustPositions);
+      final baseline = normal.dustPositions;
+      gust.onHit(hit(heavy: true));
+      normal.advanceAir(realDt: .2, effectDt: .2, roundEnd: false);
+      gust.advanceAir(realDt: .2, effectDt: .2, roundEnd: false);
+      for (var i = 0; i < 8; i++) {
+        expect(
+          gust.dustPositions[i].dx - baseline[i].dx,
+          closeTo((normal.dustPositions[i].dx - baseline[i].dx) * 2.8, 1e-10),
+        );
+      }
+      final beforeNormal = normal.dustPositions,
+          beforeGust = gust.dustPositions;
+      normal.advanceAir(realDt: .1, effectDt: .1, roundEnd: false);
+      gust.advanceAir(realDt: .1, effectDt: .1, roundEnd: false);
+      for (var i = 0; i < 8; i++) {
+        expect(
+          gust.dustPositions[i].dx - beforeGust[i].dx,
+          closeTo(normal.dustPositions[i].dx - beforeNormal[i].dx, 1e-10),
+        );
+      }
+    });
+
+    test(
+      'wall shove triggers once at either boundary, not for walking or reset',
+      () {
+        final room = ArenaRoom();
+        final events = <FighterId>[];
+        void observe(FighterState p, FighterState r) =>
+            room.observeWalls(p, r, rules, (s) => events.add(s.id));
+        observe(player, rival);
+        observe(
+          player.copyWith(x: rules.minX),
+          rival,
+        ); // walking contact: no shove
+        expect(events, isEmpty);
+        final p = player.copyWith(
+          x: rules.minX,
+          action: FighterAction.hitstun,
+          pushVelocity: -40,
+        );
+        final r = rival.copyWith(
+          x: rules.maxX,
+          action: FighterAction.blockstun,
+          pushVelocity: 20,
+        );
+        observe(p, r);
+        expect(events, [FighterId.player, FighterId.rival]);
+        for (var i = 0; i < 10; i++) {
+          observe(p, r);
+        }
+        expect(events, hasLength(2));
+        room.updateClocks(.01);
+        expect(room.shakeOffset(_height).abs(), inExclusiveRange(0, .7));
+        room.updateClocks(.12);
+        expect(room.shakeOffset(_height), 0);
+        observe(player, rival);
+        observe(p, rival);
+        expect(events, hasLength(3));
+        room.reset();
+        observe(p, r); // a load/reset snapshot must not invent an arrival
+        expect(events, hasLength(3));
+        expect(room.shakeOffset(_height), 0);
+        expect(p.x, rules.minX);
+        expect(p.pushVelocity, -40); // original immutable state was not edited
+      },
+    );
+
+    test('boundary scuff reuses capped residue, fades in 450 ms and clears on reset', () {
+      final fx = atmosphere();
+      void advance(FighterState p) => fx.advanceRoom(
+        realDt: .016,
+        effectDt: .016,
+        roundEnd: false,
+        player: p,
+        rival: rival,
+        rules: rules,
+      );
+      advance(player);
+      final wall = player.copyWith(
+        x: rules.minX,
+        pushVelocity: -40,
+        action: FighterAction.hitstun,
+      );
+      advance(wall);
+      expect(fx.markCount, 1);
+      final dots = fx.markOpacities;
+      fx.update(.225);
+      expect(fx.markOpacities.single, closeTo(dots.single * .5, .001));
+      fx.update(.226);
+      expect(fx.markCount, 0);
+      advance(wall); // no per-frame repeated contact
+      expect(fx.markCount, 0);
+      for (var i = 0; i < 100; i++) {
+        advance(player);
+        advance(wall);
+      }
+      expect(fx.markCount, 24);
+      fx.reset();
+      expect(fx.markCount, 0);
+    });
+
+    test('depth and dust stay monochrome and below HUD; rendering never advances dust', () async {
+      final room = ArenaRoom();
+      final before = room.dustPositions;
+      final bytes = await pixels((c) {
+        room.renderDepth(c, _viewport, _floor, _height);
+        room.renderDust(c, _viewport, _floor, _height);
+      });
+      expect(room.dustPositions, before);
+      final repeat = await pixels((c) {
+        room.renderDepth(c, _viewport, _floor, _height);
+        room.renderDust(c, _viewport, _floor, _height);
+      });
+      expect(repeat, orderedEquals(bytes));
+      var count = 0;
+      for (var y = 0; y < 540; y++) {
+        for (var x = 0; x < 960; x++) {
+          final offset = (y * 960 + x) * 4;
+          if (bytes[offset + 3] == 0) continue;
+          count++;
+          expect(y, greaterThanOrEqualTo((_viewport.height * .28).floor()));
+          expect(y, lessThan(_floor + _height * .15));
+          expect(bytes[offset], bytes[offset + 1]);
+          expect(bytes[offset + 1], bytes[offset + 2]);
+        }
+      }
+      expect(count, greaterThan(0));
     });
   });
 }

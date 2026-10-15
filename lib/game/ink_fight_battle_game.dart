@@ -687,6 +687,14 @@ class InkFightBattleGame extends FlameGame {
       _revealRoundEnd();
     }
     _updateEffects(fxDt);
+    _atmosphere.advanceRoom(
+      realDt: dt,
+      effectDt: fxDt,
+      roundEnd: _roundEndRevealed,
+      player: _match.player,
+      rival: _match.rival,
+      rules: _match.rules,
+    );
     _atmosphere.syncPhysicalWorld(
       player: _match.player,
       rival: _match.rival,
@@ -1269,6 +1277,7 @@ class InkFightBattleGame extends FlameGame {
 
     canvas.save();
     _applyCameraResponse(canvas);
+    _atmosphere.applyRoomResponse(canvas, _fighterHeight());
 
     final grid = ui.Paint()
       ..color = InkColors.line.withValues(alpha: .24)
@@ -1281,6 +1290,12 @@ class InkFightBattleGame extends FlameGame {
     }
 
     final floor = size.y * .80;
+    _atmosphere.renderRoom(
+      canvas,
+      ui.Size(size.x, size.y),
+      floor,
+      _fighterHeight(),
+    );
     final arenaLine = ui.Paint()
       ..color = InkColors.ink.withValues(alpha: .16)
       ..strokeWidth = 1.4
