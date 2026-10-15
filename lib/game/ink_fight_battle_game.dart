@@ -30,11 +30,17 @@ const List<int> _kLightPunchStepsMs = <int>[45, 45, 70, 95, 95];
 /// `heavyAttack.totalMs`. Frame 003 (contact) holds the 240–330 ms window.
 const List<int> _kHeavyKickStepsMs = <int>[80, 80, 80, 90, 170, 170];
 
-/// §1 hurt: 000 at 0 ms, 001 at 70 ms, 002 at 150 ms, and the last frame is
-/// held until hitstun ends — 220 ms light, 420 ms heavy — which the ticker's
-/// non-looping "fixed in the last sprite" behaviour does for free. The final
-/// step completes the cycle at exactly the heavy hitstun length.
-const List<int> _kHurtStepsMs = <int>[70, 80, 270];
+/// §1 hurt (a light punch landed): 000 at 0 ms, 001 at 70 ms, 002 at 150 ms.
+/// The three steps sum to 220 ms = `lightAttack.hitstunMs`, so the cycle ends
+/// exactly as the light stun does.
+const List<int> _kHurtStepsMs = <int>[70, 80, 70];
+
+/// §1 hurt, heavy (a heavy kick landed): the four delivered frames, 420 ms =
+/// `heavyAttack.hitstunMs`. 000 is the impact peak (head snapped back, scarf
+/// flaring), so it gets 90 ms and reads as a snap; 001 is the recoil and 002
+/// the stagger, 120 ms each; 003 is back in a near-neutral stance and holds
+/// for the last 120 ms of the stun.
+const List<int> _kHurtHeavyStepsMs = <int>[90, 90, 120, 120];
 
 /// §1 jump: takeoff 100, rise 150, apex 150, fall 160, landing 140 = 700 ms =
 /// `rules.jumpMs`, so the landing frame meets the ground.
@@ -257,6 +263,13 @@ class InkFightBattleGame extends FlameGame {
 
   final Map<FighterId, FighterAction> _prevAction =
       <FighterId, FighterAction>{};
+
+  /// Whether the hitstun a fighter is in came from a heavy kick. Set from the
+  /// hit event that caused it, read when the sprite picks its hurt cycle.
+  final Map<FighterId, bool> _heavyHurt = <FighterId, bool>{
+    FighterId.player: false,
+    FighterId.rival: false,
+  };
   final Map<FighterId, double> _landingSquashMs = <FighterId, double>{
     FighterId.player: 0,
     FighterId.rival: 0,
@@ -464,6 +477,7 @@ class InkFightBattleGame extends FlameGame {
       blockHold: await recipe('block', _kBlockHoldStepsMs, from: 1, loop: true),
       blockRelease: await recipe('block', _kBlockReleaseStepsMs, from: 3),
       hurt: await recipe('hurt', _kHurtStepsMs),
+      hurtHeavy: await recipe('hurt_heavy', _kHurtHeavyStepsMs),
       knockdown: await recipe('knockdown', _kKnockdownStepsMs),
       victory: await cycle('victory', stepTime: .12, loop: true),
       defeat: await cycle('defeat', stepTime: .12),
@@ -767,6 +781,7 @@ class InkFightBattleGame extends FlameGame {
             ),
           );
         case HitKind.hit:
+          _heavyHurt[event.defender] = event.heavy;
           _hitStopMs = math.max(
             _hitStopMs,
             event.heavy ? _kHitStopHeavyMs : _kHitStopLightMs,
@@ -1138,7 +1153,7 @@ class InkFightBattleGame extends FlameGame {
 
     final animation = state.action == FighterAction.block
         ? _blockAnimation(anims, state)
-        : anims.forAction(state.action);
+        : anims.forAction(state.action, heavy: _heavyHurt[state.id] ?? false);
     _setAnimation(component, animation, state.action, prevAction);
 
     var y = _baselineY;
@@ -1554,6 +1569,7 @@ class _FighterAnims {
     required this.blockHold,
     required this.blockRelease,
     required this.hurt,
+    required this.hurtHeavy,
     required this.knockdown,
     required this.victory,
     required this.defeat,
@@ -1571,7 +1587,11 @@ class _FighterAnims {
   final SpriteAnimation blockHold;
   final SpriteAnimation blockRelease;
 
+  /// The light hurt cycle (a jab landed) and its heavy twin (a heavy kick
+  /// landed). Which one plays is the arena's choice, made from the hit's
+  /// weight, never from damage.
   final SpriteAnimation hurt;
+  final SpriteAnimation hurtHeavy;
 
   /// The knockout fall, before [defeat] on the ground (§5). Both characters
   /// ship both cycles — the 96-frame set is complete.
@@ -1584,18 +1604,22 @@ class _FighterAnims {
   /// divides this, so factor 1 is always the art's own timing.
   final double walkBaseStepTime;
 
-  SpriteAnimation forAction(FighterAction action) => switch (action) {
-    FighterAction.idle => idle,
-    FighterAction.walk => walk,
-    FighterAction.jump => jump,
-    FighterAction.lightPunch => lightPunch,
-    FighterAction.heavyKick => heavyKick,
-    // Refined per phase by _blockAnimation(); the loop is the sane default.
-    FighterAction.block => blockHold,
-    FighterAction.hitstun || FighterAction.blockstun => hurt,
-    // Non-looping, so the last frame holds until the rules window ends.
-    FighterAction.knockdown => knockdown,
-  };
+  /// [heavy] picks the heavy hurt cycle for a hitstun. A blockstun is a guard
+  /// held up, not a flinch, so it keeps the held-guard pose.
+  SpriteAnimation forAction(FighterAction action, {bool heavy = false}) =>
+      switch (action) {
+        FighterAction.idle => idle,
+        FighterAction.walk => walk,
+        FighterAction.jump => jump,
+        FighterAction.lightPunch => lightPunch,
+        FighterAction.heavyKick => heavyKick,
+        // Refined per phase by _blockAnimation(); the loop is the sane default.
+        FighterAction.block => blockHold,
+        FighterAction.hitstun => heavy ? hurtHeavy : hurt,
+        FighterAction.blockstun => blockHold,
+        // Non-looping, so the last frame holds until the rules window ends.
+        FighterAction.knockdown => knockdown,
+      };
 }
 
 /// One ink blob flying out of a contact point (GAME_FEEL §3).

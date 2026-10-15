@@ -206,6 +206,84 @@ void main() {
     });
   });
 
+  group('§1 hit reactions', () {
+    /// Walks the player in until the heavy kick would reach the rival.
+    void walkInForKick(InkFightBattleGame game) {
+      final match = game.match;
+      game.setPlayerMoving(true);
+      var guard = 0;
+      while (match.distanceBetween(FighterId.player, FighterId.rival) > 52 &&
+          guard++ < 600) {
+        tick(game, 1);
+      }
+      game.setPlayerMoving(false);
+    }
+
+    test('a heavy kick that lands plays the heavy hurt cycle', () async {
+      final game = await loadedGame();
+      pastCountdown(game);
+      final match = game.match;
+      final rival = rivalOf(game);
+
+      walkInForKick(game);
+      game.sendPlayerAction(InputAction.heavyKick);
+      var guard = 0;
+      while (match.stateOf(FighterId.rival).action != FighterAction.hitstun &&
+          guard++ < 200) {
+        tick(game, 1);
+      }
+      expect(
+        match.stateOf(FighterId.rival).stunRemainingMs,
+        match.rules.heavyAttack.hitstunMs,
+      );
+
+      // Four delivered frames, paced to the heavy hitstun, not the light one.
+      expect(rival.animation!.frames, hasLength(4));
+      expect(totalMsOf(rival), 420);
+      expect(rival.animation!.loop, isFalse);
+      // It starts on the impact frame, which is the first one shown.
+      expect(visibleFrame(rival), 0);
+    });
+
+    test('a blocked hit holds the guard and never plays a flinch', () async {
+      final game = await loadedGame();
+      pastCountdown(game);
+      final match = game.match;
+      final rival = rivalOf(game);
+
+      walkInForKick(game);
+      // The rival raises its guard, and the heavy kick meets it.
+      match.submit(
+        const InputCommand(
+          fighter: FighterId.rival,
+          action: InputAction.block,
+          sequence: 1,
+        ),
+      );
+      game.sendPlayerAction(InputAction.heavyKick);
+
+      var sawBlockstun = false;
+      for (var i = 0; i < 120; i++) {
+        tick(game, 1);
+        if (match.stateOf(FighterId.rival).action == FighterAction.blockstun) {
+          sawBlockstun = true;
+          // The held-guard cycle: two frames, looping, never the hurt cycles.
+          expect(rival.animation!.frames, hasLength(2));
+          expect(rival.animation!.loop, isTrue);
+        }
+      }
+      expect(
+        sawBlockstun,
+        isTrue,
+        reason: 'the heavy should have been guarded',
+      );
+      expect(
+        match.rival.health,
+        match.rules.health - match.rules.heavyAttack.blockedDamage,
+      );
+    });
+  });
+
   group('§2 hit-stop', () {
     test(
       'a clean hit freezes the fight for its weight but never the ink',
@@ -241,10 +319,10 @@ void main() {
           greaterThan(0),
           reason: 'the burst spawned',
         );
-        // ...the hurt cycle it just handed the rival spans the heavy hitstun,
-        // holding its last frame for the shorter light one (§1).
+        // ...a jab hands the rival the light hurt cycle, which spans exactly
+        // the light hitstun (§1). A heavy kick gets its own cycle, below.
         expect(rival.animation!.frames, hasLength(3));
-        expect(totalMsOf(rival), 420);
+        expect(totalMsOf(rival), 220);
 
         final clock = game.match.timeRemainingMs;
         final rivalX = game.match.stateOf(FighterId.rival).x;
