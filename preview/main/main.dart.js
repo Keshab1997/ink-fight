@@ -67604,7 +67604,7 @@ $S:451}
 A.N7.prototype={
 H(a){return A.pe(A.EJ(new A.aby(this)),!0)}}
 A.aby.prototype={
-$2(a,b){var s=null,r=b.d*0.24,q=B.c.b1(Math.max(120,r),0,b.b*0.48),p=""+this.a.c
+$2(a,b){var s=null,r=b.d*0.24,q=B.c.b1(Math.max(100,r),0,b.b*0.48),p=""+this.a.c
 return new A.ek(B.xO,s,s,A.cI(A.tJ(A.agM(new A.abx(),A.tq(A.afE(B.aL,A.bR("ROUND "+p,s,s,s,B.Ng,s),B.d6),s,s),B.dq,B.hR,new A.cy("round-marker-"+p,t.W),new A.an(0,1,t.Y),t.i),B.bJ,!0),r,q),s)},
 $S:452}
 A.abx.prototype={
