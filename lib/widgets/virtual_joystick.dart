@@ -36,9 +36,10 @@ class VirtualJoystick extends StatefulWidget {
   /// Thumb diameter as a share of the pad: 44 dp on the 104 dp default.
   static const double thumbShare = 44 / 104;
 
-  /// |axis| below this reports 0 — a resting thumb must not drift the
-  /// fighter.
-  static const double deadZone = .15;
+  /// |axis| below this reports 0 — a tenth of the travel either way, so a
+  /// resting thumb still cannot drift the fighter but a nudge answers
+  /// sooner. Was .15, which kept almost a seventh of every push dead.
+  static const double deadZone = .10;
 
   /// Smallest axis movement worth a callback.
   static const double axisEpsilon = .01;

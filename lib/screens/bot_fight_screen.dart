@@ -1,5 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flame/game.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../game/audio/fight_sounds.dart';
 import '../game/bot/bot_strategy.dart';
@@ -38,8 +42,19 @@ class BotFightScreen extends StatefulWidget {
 }
 
 class _BotFightScreenState extends State<BotFightScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   late final InkFightBattleGame _game;
+
+  /// Screen-local frame clock. The HUD rebuilds on `hudVersion`, which only
+  /// moves when health, the clock's second, the phase or the outcome moves —
+  /// so everything that must ease between those bumps (the health trail, the
+  /// countdown beats, the buttons' busy read) rides this ticker instead of
+  /// the arena. It carries the ticker's elapsed time, so easing math reads
+  /// real frame deltas and tests read fake-async ones. It ticks for the
+  /// screen's whole life, paused or not: the listeners below are three tiny
+  /// subtrees, never the whole HUD.
+  late final Ticker _ticker = createTicker(_onTick);
+  final ValueNotifier<Duration> _frame = ValueNotifier(Duration.zero);
 
   /// The pause overlay is up, and the engine is stopped with it: the match,
   /// the bot and the ink all freeze together because `pauseEngine` stops the
@@ -68,14 +83,21 @@ class _BotFightScreenState extends State<BotFightScreen>
     _applyPreferences();
     widget.settings.addListener(_applyPreferences);
     WidgetsBinding.instance.addObserver(this);
+    _ticker.start();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.settings.removeListener(_applyPreferences);
+    _ticker.dispose();
+    _frame.dispose();
     _game.pauseEngine();
     super.dispose();
+  }
+
+  void _onTick(Duration elapsed) {
+    _frame.value = elapsed;
   }
 
   /// Keeps the game's two cue gates on the model's two switches. The
@@ -210,7 +232,7 @@ class _BotFightScreenState extends State<BotFightScreen>
                 top: 14,
                 left: 72,
                 right: 72,
-                child: _BattleHud(game: _game),
+                child: _BattleHud(game: _game, tick: _frame),
               ),
               Positioned(
                 top: 12,
@@ -249,6 +271,8 @@ class _BotFightScreenState extends State<BotFightScreen>
                   onBlock: () => _game.sendPlayerAction(InputAction.block),
                   onJump: () => _game.sendPlayerAction(InputAction.jump),
                   onMoveAxis: _game.setPlayerMoveAxis,
+                  game: _game,
+                  tick: _frame,
                 ),
               ),
               if (_paused)
@@ -275,9 +299,14 @@ class _BotFightScreenState extends State<BotFightScreen>
 }
 
 class _BattleHud extends StatelessWidget {
-  const _BattleHud({required this.game});
+  const _BattleHud({required this.game, required this.tick});
 
   final InkFightBattleGame game;
+
+  /// The screen ticker: the chip's beats and the bars' trails ride it (see
+  /// [_TimerChip] and [_HudHealth]), while the row itself still rebuilds on
+  /// `hudVersion` only.
+  final ValueListenable<Duration> tick;
 
   @override
   Widget build(BuildContext context) {
@@ -294,30 +323,22 @@ class _BattleHud extends StatelessWidget {
               child: _HudHealth(
                 label: 'YOU',
                 value: player.health / rules.health,
+                tick: tick,
               ),
             ),
             const SizedBox(width: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: InkColors.ink,
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Text(
-                _timerLabel(),
-                style: const TextStyle(
-                  color: InkColors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.2,
-                ),
-              ),
+            // The only corner of the HUD on the frame clock: the beats fall
+            // between hudVersion bumps, so the chip repaints them itself.
+            ListenableBuilder(
+              listenable: tick,
+              builder: (context, _) => _TimerChip(game: game),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _HudHealth(
                 label: 'CRIMSON RIVAL',
                 value: rival.health / rules.health,
+                tick: tick,
               ),
             ),
           ],
@@ -325,19 +346,76 @@ class _BattleHud extends StatelessWidget {
       },
     );
   }
+}
 
-  String _timerLabel() {
+/// The clock between the health bars: the countdown's beat while the match
+/// counts in, the round clock while it fights, `END` once decided.
+///
+/// The beat split is the screen's own four-count, but the length it splits
+/// comes from the rules — never a hardcoded 2000.
+class _TimerChip extends StatelessWidget {
+  const _TimerChip({required this.game});
+
+  final InkFightBattleGame game;
+
+  /// Beats in the countdown: 3 · 2 · 1 · FIGHT!.
+  static const int _countdownBeats = 4;
+
+  /// FIGHT! strobes this many times across its beat, on sim time, so a
+  /// paused countdown holds its flash instead of blinking behind glass.
+  static const int _fightBlinksPerBeat = 4;
+
+  /// The dim half of the FIGHT! strobe.
+  static const double _fightFlashDim = .45;
+
+  @override
+  Widget build(BuildContext context) {
     final match = game.match;
+    var label = 'END';
+    var opacity = 1.0;
     if (match.phase == MatchPhase.countdown) {
-      return 'READY';
+      final beatMs = match.rules.countdownMs ~/ _countdownBeats;
+      final index = ((match.countdownRemainingMs - 1) ~/ beatMs).clamp(
+        0,
+        _countdownBeats - 1,
+      );
+      label = switch (index) {
+        3 => '3',
+        2 => '2',
+        1 => '1',
+        _ => 'FIGHT!',
+      };
+      if (index == 0) {
+        final blinkMs = beatMs ~/ _fightBlinksPerBeat;
+        opacity = ((match.countdownRemainingMs ~/ blinkMs) % 2 == 0)
+            ? 1.0
+            : _fightFlashDim;
+      }
+    } else if (!match.isFinished) {
+      final totalSeconds = (match.timeRemainingMs / 1000).ceil();
+      final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+      final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+      label = '$minutes : $seconds';
     }
-    if (match.isFinished) {
-      return 'END';
-    }
-    final totalSeconds = (match.timeRemainingMs / 1000).ceil();
-    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes : $seconds';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: InkColors.ink,
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Opacity(
+        opacity: opacity,
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: InkColors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -615,11 +693,106 @@ class _ControlsHelpCard extends StatelessWidget {
   }
 }
 
-class _HudHealth extends StatelessWidget {
-  const _HudHealth({required this.label, required this.value});
+/// One health bar: the label and the number snap, the bar itself remembers.
+///
+/// Two layers: the crisp bar jumps to the new value at once, and a damage
+/// trail behind it eases down over ~250 ms so the eye reads how much just
+/// went missing, plus a white flash on the drop. The easing rides [tick] —
+/// the screen's own frame clock — and both layers are pure paint over
+/// `value`, so a paused engine freezes the trail exactly where it stands.
+class _HudHealth extends StatefulWidget {
+  const _HudHealth({
+    required this.label,
+    required this.value,
+    required this.tick,
+  });
 
   final String label;
   final double value;
+  final ValueListenable<Duration> tick;
+
+  /// Trail easing time constant: ~96% of the way down in ~250 ms.
+  static const double _trailTauMs = 80;
+
+  /// Flash decay time constant: visibly gone in ~200 ms.
+  static const double _flashTauMs = 70;
+
+  /// Peak opacity of the white wash on a drop.
+  static const double _flashPeak = .5;
+
+  /// Close enough to settled that the bar snaps exact and holds still.
+  static const double _snapEpsilon = .001;
+
+  static const double _barHeight = 6;
+
+  @override
+  State<_HudHealth> createState() => _HudHealthState();
+}
+
+class _HudHealthState extends State<_HudHealth> {
+  late double _trail;
+  double _flash = 0;
+  Duration _lastTick = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _trail = widget.value;
+    _lastTick = widget.tick.value;
+    widget.tick.addListener(_onTick);
+  }
+
+  @override
+  void didUpdateWidget(covariant _HudHealth oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tick != widget.tick) {
+      oldWidget.tick.removeListener(_onTick);
+      _lastTick = widget.tick.value;
+      widget.tick.addListener(_onTick);
+    }
+    if (widget.value < oldWidget.value) {
+      // Damage: the crisp bar snaps, the trail keeps the old edge, the bar
+      // flashes.
+      _flash = 1;
+    } else if (widget.value > _trail) {
+      // Healing (a rematch): nothing was lost, so there is no trail to run.
+      _trail = widget.value;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.tick.removeListener(_onTick);
+    super.dispose();
+  }
+
+  void _onTick() {
+    final elapsed = widget.tick.value;
+    final dtMs = (elapsed - _lastTick).inMicroseconds / 1000;
+    _lastTick = elapsed;
+    if (dtMs <= 0) {
+      return;
+    }
+    final target = widget.value;
+    final trailStep = 1 - math.exp(-dtMs / _HudHealth._trailTauMs);
+    final trail = _trail + (target - _trail) * trailStep;
+    final flash = _flash * math.exp(-dtMs / _HudHealth._flashTauMs);
+    if ((trail - target).abs() < _HudHealth._snapEpsilon &&
+        flash < _HudHealth._snapEpsilon) {
+      // Settled: snap exact once, then hold still without setStates.
+      if (_trail != target || _flash != 0) {
+        setState(() {
+          _trail = target;
+          _flash = 0;
+        });
+      }
+      return;
+    }
+    setState(() {
+      _trail = trail;
+      _flash = flash;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -636,17 +809,27 @@ class _HudHealth extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: InkColors.inkSoft,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.1,
+              // The rival's name is long and the bar is narrow on small
+              // windows: the label scales down to fit (the home screen's
+              // FittedBox discipline) instead of pushing the number out.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: InkColors.inkSoft,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
                 ),
               ),
               Text(
-                '${(value * 100).round()}%',
+                '${(widget.value * 100).round()}%',
                 style: const TextStyle(
                   color: InkColors.muted,
                   fontSize: 9,
@@ -658,11 +841,32 @@ class _HudHealth extends StatelessWidget {
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              minHeight: 6,
-              value: value,
-              backgroundColor: InkColors.paperDeep,
-              color: InkColors.ink,
+            child: SizedBox(
+              height: _HudHealth._barHeight,
+              width: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // The trail: where the bar was a quarter-second ago.
+                  LinearProgressIndicator(
+                    value: _trail,
+                    backgroundColor: InkColors.paperDeep,
+                    color: InkColors.inkSoft,
+                  ),
+                  // The truth, snapped: a transparent track so the trail
+                  // shows through the segment that just went missing.
+                  LinearProgressIndicator(
+                    value: widget.value,
+                    backgroundColor: Colors.transparent,
+                    color: InkColors.ink,
+                  ),
+                  // The flash: a white wash that dies with _flash.
+                  Opacity(
+                    opacity: _flash * _HudHealth._flashPeak,
+                    child: const ColoredBox(color: InkColors.white),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -678,6 +882,8 @@ class _BattleControls extends StatelessWidget {
     required this.onBlock,
     required this.onJump,
     required this.onMoveAxis,
+    required this.game,
+    required this.tick,
   });
 
   final VoidCallback onPunch;
@@ -689,32 +895,19 @@ class _BattleControls extends StatelessWidget {
   /// flick shares [onJump] with the button.
   final ValueChanged<double> onMoveAxis;
 
+  /// Read-only: the buttons ask the rules whether the player can act, so the
+  /// busy state is a report, never a guess the screen keeps itself.
+  final InkFightBattleGame game;
+
+  /// The screen ticker; only the action buttons ride it (see below).
+  final ValueListenable<Duration> tick;
+
   /// The touch budget of one action button; never smaller than the old row.
   static const double _actionWidth = 78;
   static const double _gap = 8;
 
   @override
   Widget build(BuildContext context) {
-    final actions = <Widget>[
-      _ControlButton(
-        label: 'PUNCH',
-        icon: Icons.bolt_rounded,
-        onTap: onPunch,
-        primary: true,
-      ),
-      _ControlButton(
-        label: 'KICK',
-        icon: Icons.sports_martial_arts_rounded,
-        onTap: onKick,
-      ),
-      _ControlButton(
-        label: 'BLOCK',
-        icon: Icons.shield_outlined,
-        onTap: onBlock,
-      ),
-      _ControlButton(label: 'JUMP', icon: Icons.north_rounded, onTap: onJump),
-    ];
-
     return LayoutBuilder(
       builder: (context, constraints) {
         // One row wants the joystick, a breathing gap and all four 78 dp
@@ -737,34 +930,75 @@ class _BattleControls extends StatelessWidget {
               ],
             ),
             const Spacer(),
-            if (wantsRow)
-              for (var i = 0; i < actions.length; i++) ...[
-                if (i > 0) const SizedBox(width: _gap),
-                actions[i],
-              ]
-            else
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
+            // Only the buttons ride the ticker: whether the player can act
+            // is a per-frame read of the rules, and nothing else down here
+            // moves that fast. The joystick keeps its own spring.
+            ListenableBuilder(
+              listenable: tick,
+              builder: (context, _) {
+                final busy = !game.match.stateOf(FighterId.player).canAct;
+                final actions = <Widget>[
+                  _ControlButton(
+                    label: 'PUNCH',
+                    icon: Icons.bolt_rounded,
+                    onTap: onPunch,
+                    primary: true,
+                    busy: busy,
+                  ),
+                  _ControlButton(
+                    label: 'KICK',
+                    icon: Icons.sports_martial_arts_rounded,
+                    onTap: onKick,
+                    busy: busy,
+                  ),
+                  _ControlButton(
+                    label: 'BLOCK',
+                    icon: Icons.shield_outlined,
+                    onTap: onBlock,
+                    busy: busy,
+                  ),
+                  _ControlButton(
+                    label: 'JUMP',
+                    icon: Icons.north_rounded,
+                    onTap: onJump,
+                    busy: busy,
+                  ),
+                ];
+                if (wantsRow) {
+                  return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      actions[0],
-                      const SizedBox(width: _gap),
-                      actions[1],
+                      for (var i = 0; i < actions.length; i++) ...[
+                        if (i > 0) const SizedBox(width: _gap),
+                        actions[i],
+                      ],
                     ],
-                  ),
-                  const SizedBox(height: _gap),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      actions[2],
-                      const SizedBox(width: _gap),
-                      actions[3],
-                    ],
-                  ),
-                ],
-              ),
+                  );
+                }
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        actions[0],
+                        const SizedBox(width: _gap),
+                        actions[1],
+                      ],
+                    ),
+                    const SizedBox(height: _gap),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        actions[2],
+                        const SizedBox(width: _gap),
+                        actions[3],
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
           ],
         );
       },
@@ -772,54 +1006,91 @@ class _BattleControls extends StatelessWidget {
   }
 }
 
-class _ControlButton extends StatelessWidget {
+/// One action button: idle, pressed, and busy.
+///
+/// Pressed answers the finger at once: an ink fill and a small scale, from
+/// the button's own tapped state. Busy is quieter: the row hands in whether
+/// the player can act (a per-frame read of the rules), and a committed
+/// fighter's buttons sit dimmed. Busy never eats the tap — the controller
+/// already drops what it cannot take, so the button reports instead of
+/// deciding.
+class _ControlButton extends StatefulWidget {
   const _ControlButton({
     required this.label,
     required this.icon,
     required this.onTap,
     this.primary = false,
+    this.busy = false,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback onTap;
   final bool primary;
+  final bool busy;
+
+  /// Pressed scale: a small give under the finger.
+  static const double _pressedScale = .93;
+
+  /// Busy dim: quiet, still legible.
+  static const double _busyOpacity = .55;
+
+  @override
+  State<_ControlButton> createState() => _ControlButtonState();
+}
+
+class _ControlButtonState extends State<_ControlButton> {
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    final background = primary ? InkColors.ink : InkColors.white;
-    final foreground = primary ? InkColors.white : InkColors.inkSoft;
+    final background = widget.primary ? InkColors.ink : InkColors.white;
+    final pressedBackground = widget.primary
+        ? InkColors.inkSoft
+        : InkColors.paperDeep;
+    final foreground = widget.primary ? InkColors.white : InkColors.inkSoft;
 
-    return Material(
-      color: background,
-      borderRadius: BorderRadius.circular(15),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(15),
-        child: Container(
-          width: 78,
-          height: 58,
-          padding: const EdgeInsets.symmetric(horizontal: 7),
-          decoration: BoxDecoration(
+    return Opacity(
+      opacity: widget.busy ? _ControlButton._busyOpacity : 1,
+      child: Transform.scale(
+        scale: _pressed ? _ControlButton._pressedScale : 1,
+        child: Material(
+          color: _pressed ? pressedBackground : background,
+          borderRadius: BorderRadius.circular(15),
+          child: InkWell(
+            onTap: widget.onTap,
+            onTapDown: (_) => setState(() => _pressed = true),
+            onTapUp: (_) => setState(() => _pressed = false),
+            onTapCancel: () => setState(() => _pressed = false),
             borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: primary ? InkColors.ink : InkColors.line),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: foreground, size: 19),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  color: foreground,
-                  fontSize: 8,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .6,
+            child: Container(
+              width: 78,
+              height: 58,
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(
+                  color: widget.primary ? InkColors.ink : InkColors.line,
                 ),
               ),
-            ],
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(widget.icon, color: foreground, size: 19),
+                  const SizedBox(height: 3),
+                  Text(
+                    widget.label,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .6,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

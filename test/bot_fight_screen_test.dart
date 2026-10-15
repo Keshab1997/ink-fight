@@ -100,7 +100,8 @@ void main() {
     await tester.tap(find.text('REMATCH'));
     await tester.pump();
     expect(find.text('REMATCH'), findsNothing);
-    expect(find.text('READY'), findsOneWidget);
+    // The fresh countdown restarts on its first beat, not a literal READY.
+    expect(find.text('3'), findsOneWidget);
     expect(find.text('100%'), findsNWidgets(2));
     expect(game.match.phase, MatchPhase.countdown);
     // A rematch drops the cinema with the rest of the feel state.
@@ -669,5 +670,225 @@ void main() {
     expect(game.soundEnabled, isFalse);
     settings.soundOn = true;
     expect(game.soundEnabled, isTrue);
+  });
+
+  testWidgets('a landed hit leaves a damage trail that eases down', (
+    tester,
+  ) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    // An idle player takes the bot's first connect headlessly.
+    for (var i = 0; i < 1200; i++) {
+      if (game.match.stateOf(FighterId.player).health <
+          game.match.rules.health) {
+        break;
+      }
+      game.update(1 / 60);
+    }
+    expect(
+      game.match.stateOf(FighterId.player).health,
+      lessThan(game.match.rules.health),
+    );
+
+    // All four bars on screen: YOU's trail-and-crisp pair rides first —
+    // the HUD row builds YOU before CRIMSON RIVAL — and the flash is the
+    // one Opacity washed over a white plate.
+    List<double> allBars() => tester
+        .widgetList<LinearProgressIndicator>(
+          find.byType(LinearProgressIndicator),
+        )
+        .map((bar) => bar.value!)
+        .toList();
+    double flashWash() => tester
+        .widgetList<Opacity>(
+          find.byWidgetPredicate(
+            (widget) => widget is Opacity && widget.child is ColoredBox,
+          ),
+        )
+        .first
+        .opacity;
+
+    // First live frame: the crisp bar snaps and the wash flashes; the
+    // second lets the trail ease off its old edge.
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+    final target =
+        game.match.stateOf(FighterId.player).health / game.match.rules.health;
+    final mid = allBars();
+    expect(mid, hasLength(4), reason: 'two layers on each of two bars');
+    expect(mid[1], closeTo(target, .0001), reason: 'the crisp bar snaps');
+    expect(mid[0], greaterThan(mid[1]), reason: 'the trail holds the edge');
+    expect(mid[0], lessThan(1.0), reason: '...already easing down');
+    expect(flashWash(), greaterThan(0));
+
+    // Freeze the fight: the trail must finish on ticker time alone.
+    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
+    final frozenTarget =
+        game.match.stateOf(FighterId.player).health / game.match.rules.health;
+    final settled = allBars();
+    expect(settled, hasLength(4));
+    expect(settled[1], closeTo(frozenTarget, .0001));
+    expect(settled[0], closeTo(frozenTarget, .01));
+    expect(flashWash(), lessThan(.01));
+  });
+
+  testWidgets('the countdown chip counts 3-2-1-FIGHT from the rules', (
+    tester,
+  ) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    Future<void> expectBeat(String beat, int floorMs) async {
+      for (
+        var i = 0;
+        i < 200 && game.match.countdownRemainingMs > floorMs;
+        i++
+      ) {
+        game.update(1 / 60);
+      }
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump();
+      expect(find.text(beat), findsOneWidget);
+    }
+
+    await expectBeat('3', 2000);
+    await expectBeat('2', 1400);
+    await expectBeat('1', 900);
+    await expectBeat('FIGHT!', 400);
+
+    // Past the countdown the chip is the round clock again.
+    for (var i = 0; i < 190 && game.match.phase != MatchPhase.fighting; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.match.phase, MatchPhase.fighting);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+    expect(find.text('01 : 00'), findsOneWidget);
+  });
+
+  testWidgets('FIGHT! strobes on sim time across its beat', (tester) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    double chipFlash() => tester
+        .widget<Opacity>(
+          find.ancestor(
+            of: find.text('FIGHT!'),
+            matching: find.byType(Opacity),
+          ),
+        )
+        .opacity;
+
+    // Land mid-cell in two neighbouring blink cells (125 ms halves).
+    for (var i = 0; i < 200 && game.match.countdownRemainingMs > 450; i++) {
+      game.update(1 / 60);
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+    expect(find.text('FIGHT!'), findsOneWidget);
+    expect(chipFlash(), .45);
+
+    for (var i = 0; i < 200 && game.match.countdownRemainingMs > 350; i++) {
+      game.update(1 / 60);
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+    expect(find.text('FIGHT!'), findsOneWidget);
+    expect(chipFlash(), 1.0);
+  });
+
+  testWidgets('a pressed button answers with a smaller, inked plate', (
+    tester,
+  ) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    pastCountdown(game);
+    await tester.pump(const Duration(milliseconds: 50));
+
+    double punchScale() {
+      final plate = tester.widget<Transform>(
+        find.ancestor(of: find.text('PUNCH'), matching: find.byType(Transform)),
+      );
+      return plate.transform.storage[0];
+    }
+
+    expect(punchScale(), closeTo(1, .0001));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('PUNCH')),
+    );
+    await tester.pump();
+    expect(punchScale(), closeTo(.93, .0001));
+
+    await gesture.up();
+    await tester.pump();
+    expect(punchScale(), closeTo(1, .0001));
+  });
+
+  testWidgets('buttons go quiet while the player cannot act', (tester) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    pastCountdown(game);
+    await tester.pump(const Duration(milliseconds: 50));
+
+    double punchDim() => tester
+        .widget<Opacity>(
+          find.ancestor(of: find.text('PUNCH'), matching: find.byType(Opacity)),
+        )
+        .opacity;
+
+    expect(punchDim(), 1.0);
+
+    // A jab commits the player; freeze mid-swing and the row reads busy.
+    game.sendPlayerAction(InputAction.lightPunch);
+    for (var i = 0; i < 5; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.match.stateOf(FighterId.player).canAct, isFalse);
+    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(punchDim(), .55);
+
+    // Through recovery and idle again: full voice back.
+    await tester.tap(find.text('RESUME'));
+    await tester.pump();
+    for (
+      var i = 0;
+      i < 120 && !game.match.stateOf(FighterId.player).canAct;
+      i++
+    ) {
+      game.update(1 / 60);
+    }
+    expect(game.match.stateOf(FighterId.player).canAct, isTrue);
+    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(punchDim(), 1.0);
+  });
+
+  testWidgets('the arena HUD fits 640x360 without overflow', (tester) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    pastCountdown(game);
+
+    tester.view.physicalSize = const Size(640, 360);
+    tester.view.devicePixelRatio = 1;
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('YOU'), findsOneWidget);
+    expect(find.text('CRIMSON RIVAL'), findsOneWidget);
+    expect(game.match.phase, MatchPhase.fighting);
+    expect(tester.takeException(), isNull);
   });
 }
