@@ -205,17 +205,23 @@ void main() {
       expect(player.animation!.frames, hasLength(5));
     });
 
-    test('idle keeps its 560 ms breath however many frames have landed', () async {
-      final game = await loadedGame();
-      pastCountdown(game);
-      // Four keyframes plus the loop-seam in-between (prompt pack §5); the
-      // rival also has the 002 → 003 one, the player's is still to come.
-      for (final (fighter, frames) in [(playerOf(game), 5), (rivalOf(game), 6)]) {
-        expect(fighter.animation!.frames, hasLength(frames));
-        expect(fighter.animation!.loop, isTrue);
-        expect(totalMsOf(fighter), closeTo(560, 1e-6));
-      }
-    });
+    test(
+      'idle keeps its 560 ms breath however many frames have landed',
+      () async {
+        final game = await loadedGame();
+        pastCountdown(game);
+        // Four keyframes plus the loop-seam in-between (prompt pack §5); the
+        // rival also has the 002 → 003 one, the player's is still to come.
+        for (final (fighter, frames) in [
+          (playerOf(game), 5),
+          (rivalOf(game), 6),
+        ]) {
+          expect(fighter.animation!.frames, hasLength(frames));
+          expect(fighter.animation!.loop, isTrue);
+          expect(totalMsOf(fighter), closeTo(560, 1e-6));
+        }
+      },
+    );
   });
 
   group('§1 hit reactions', () {
