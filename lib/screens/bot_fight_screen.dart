@@ -789,7 +789,7 @@ class _RoundMarker extends StatelessWidget {
         alignment: const Alignment(0, -.37),
         child: SizedBox(
           width: math
-              .max(120.0, constraints.maxHeight * .24)
+              .max(100.0, constraints.maxHeight * .24)
               .clamp(0.0, constraints.maxWidth * .48),
           height: constraints.maxHeight * .24,
           child: ColoredBox(
