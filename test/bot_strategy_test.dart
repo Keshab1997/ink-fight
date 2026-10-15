@@ -34,6 +34,8 @@ class FightHarness {
 
   void skipCountdown() => advance(rules.countdownMs);
 
+  double gap() => (match.rival.x - match.player.x).abs();
+
   void pressPlayer(InputAction action) {
     _sequence++;
     match.submit(
@@ -98,6 +100,99 @@ const BotProfile tooSlowToGuard = BotProfile(
   preferredGap: 52,
 );
 
+/// A bot that never walks or swings on its own — hesitation holds it still —
+/// so the only thing it can do is punish. The short reaction keeps a scripted
+/// punish inside the player's recovery.
+BotProfile punisher({required double punishChance}) => BotProfile(
+  difficulty: BotDifficulty.hard,
+  thinkIntervalMs: 16,
+  reactionMs: 1,
+  attackCooldownMs: 600000,
+  blockChance: 0,
+  heavyChance: 0,
+  hesitationChance: 1,
+  recoveryMs: 120,
+  preferredGap: 42,
+  punishChance: punishChance,
+);
+
+/// A bot that swings its heavy as soon as it can, and never punishes, guards,
+/// or swings again. The only attack it throws is the one the test watches.
+const BotProfile heavyOnce = BotProfile(
+  difficulty: BotDifficulty.normal,
+  thinkIntervalMs: 40,
+  reactionMs: 140,
+  attackCooldownMs: 600000,
+  blockChance: 0,
+  heavyChance: 1,
+  hesitationChance: 0,
+  recoveryMs: 200,
+  preferredGap: 42,
+);
+
+/// Walks the player east until the gap is within [maxGap], one tick at a time.
+void walkPlayerTo(FightHarness fight, double maxGap) {
+  fight.holdPlayer(1);
+  var guard = 0;
+  while (fight.gap() > maxGap && guard++ < 600) {
+    fight.step();
+  }
+  fight.holdPlayer(0);
+}
+
+/// Plays one whole match between two bots and returns how it ended.
+MatchOutcome? duel(BotProfile player, BotProfile rival, {required int seed}) {
+  final rules = MatchRules.standard;
+  final match = MatchController();
+  final playerBot = BotController(
+    profile: player,
+    fighter: FighterId.player,
+    seed: seed,
+  );
+  final rivalBot = BotController(
+    profile: rival,
+    fighter: FighterId.rival,
+    seed: seed + 1000,
+  );
+  final slice = rules.tickMs / 1000;
+  var steps = 0;
+  while (!match.isFinished && steps++ < 20000) {
+    playerBot.update(slice, match);
+    rivalBot.update(slice, match);
+    match.tick(slice);
+  }
+  return match.outcome;
+}
+
+/// Plays [sharper] against [milder] over many seeds, with each bot taking
+/// both sides, and checks that the sharper preset wins more of the duels.
+void expectSharperWins(BotProfile sharper, BotProfile milder) {
+  const seeds = 20;
+  var sharperWins = 0;
+  var milderWins = 0;
+  for (var seed = 1; seed <= seeds; seed++) {
+    final asPlayer = duel(sharper, milder, seed: seed);
+    final asRival = duel(milder, sharper, seed: seed);
+    if (asPlayer == MatchOutcome.playerWin) {
+      sharperWins++;
+    }
+    if (asPlayer == MatchOutcome.rivalWin) {
+      milderWins++;
+    }
+    if (asRival == MatchOutcome.rivalWin) {
+      sharperWins++;
+    }
+    if (asRival == MatchOutcome.playerWin) {
+      milderWins++;
+    }
+  }
+  expect(
+    sharperWins,
+    greaterThan(milderWins),
+    reason: '${sharper.difficulty.name} against ${milder.difficulty.name}',
+  );
+}
+
 void main() {
   final rules = MatchRules.standard;
 
@@ -110,6 +205,7 @@ void main() {
       expect(profile.attackCooldownMs, greaterThan(0));
       expect(profile.recoveryMs, greaterThan(0), reason: 'never unpunishable');
       expect(profile.blockChance, greaterThan(0));
+      expect(profile.punishChance, inInclusiveRange(0, 1));
       expect(
         profile.blockChance,
         lessThan(1),
@@ -135,6 +231,7 @@ void main() {
       expect(sharper.blockChance, greaterThan(milder.blockChance));
       expect(sharper.hesitationChance, lessThan(milder.hesitationChance));
       expect(sharper.preferredGap, lessThan(milder.preferredGap));
+      expect(sharper.punishChance, greaterThan(milder.punishChance));
     }
   });
 
@@ -282,5 +379,127 @@ void main() {
       lessThan(rules.health),
       reason: 'the bot should still fight after a rematch',
     );
+  });
+
+  test('a punish lands through a command the controller accepted', () {
+    final fight = FightHarness(profile: punisher(punishChance: 1));
+    fight.skipCountdown();
+    // Just outside the jab's reach: the whole active window misses.
+    walkPlayerTo(fight, 47);
+    expect(fight.gap(), greaterThan(rules.lightAttack.reach));
+
+    fight.pressPlayer(InputAction.lightPunch);
+    var punished = false;
+    int? hitMs;
+    var elapsedMs = 0;
+    while (elapsedMs < rules.lightAttack.totalMs + 200) {
+      final before = fight.match.rival.action;
+      fight.step();
+      elapsedMs += rules.tickMs;
+      if (!punished && fight.match.rival.action == FighterAction.lightPunch) {
+        // The punch only shows up once the controller accepted it, which is
+        // only possible from a state that can act.
+        expect(
+          before == FighterAction.idle || before == FighterAction.walk,
+          isTrue,
+        );
+        punished = true;
+      }
+      if (hitMs == null && fight.match.player.health < rules.health) {
+        hitMs = elapsedMs;
+      }
+    }
+
+    expect(punished, isTrue, reason: 'the rival took the opening');
+    expect(hitMs, isNotNull, reason: 'and the punch landed');
+    expect(
+      hitMs!,
+      lessThanOrEqualTo(rules.lightAttack.totalMs),
+      reason: 'inside the whiff\'s recovery',
+    );
+    expect(fight.match.player.health, rules.health - rules.lightAttack.damage);
+  });
+
+  test('the same opening goes unpunished when the chance is zero', () {
+    final fight = FightHarness(profile: punisher(punishChance: 0));
+    fight.skipCountdown();
+    walkPlayerTo(fight, 47);
+
+    fight.pressPlayer(InputAction.lightPunch);
+    fight.advance(rules.lightAttack.totalMs + 200);
+
+    expect(fight.match.player.health, rules.health);
+    expect(fight.match.rival.action, FighterAction.idle);
+  });
+
+  test('the bot does not punish while the opponent is still in startup', () {
+    final fight = FightHarness(profile: punisher(punishChance: 1));
+    fight.skipCountdown();
+    walkPlayerTo(fight, 47);
+
+    fight.pressPlayer(InputAction.lightPunch);
+    // Ten ticks reach 160 ms: the jab's window has just closed, but the bot
+    // has only seen the opponent still in startup and active frames.
+    final ticks = (rules.lightAttack.startupMs + 60) ~/ rules.tickMs;
+    for (var tick = 0; tick < ticks; tick++) {
+      fight.step();
+      expect(
+        fight.match.rival.action,
+        isNot(FighterAction.lightPunch),
+        reason: 'no punish before the opening',
+      );
+    }
+  });
+
+  test('after its own whiffed heavy, the player\'s jab still lands', () {
+    final fight = FightHarness(profile: heavyOnce, seed: 3);
+    fight.skipCountdown();
+
+    // The bot walks in and throws its heavy; the player steps back at once,
+    // so the kick's whole active window is out of reach.
+    var kicked = false;
+    for (var i = 0; i < 400 && !kicked; i++) {
+      fight.step();
+      if (fight.match.rival.action == FighterAction.heavyKick) {
+        fight.holdPlayer(-1);
+        kicked = true;
+      }
+    }
+    expect(kicked, isTrue, reason: 'the bot should have swung');
+    fight.advance(rules.heavyAttack.totalMs);
+    fight.holdPlayer(0);
+    expect(fight.match.rival.health, rules.health, reason: 'the kick whiffed');
+
+    // Walk back in and jab. The bot's own recovery is no shield.
+    walkPlayerTo(fight, rules.lightAttack.reach * .9);
+    fight.pressPlayer(InputAction.lightPunch);
+    fight.advance(rules.lightAttack.totalMs);
+
+    expect(
+      fight.match.rival.health,
+      lessThan(rules.health),
+      reason: 'the bot must never be unpunishable',
+    );
+  });
+
+  test('every preset reaches a decided result against itself', () {
+    for (final profile in [
+      BotProfile.easy,
+      BotProfile.normal,
+      BotProfile.hard,
+    ]) {
+      for (var seed = 1; seed <= 4; seed++) {
+        expect(
+          duel(profile, profile, seed: seed),
+          isNotNull,
+          reason: '${profile.difficulty.name} seed $seed',
+        );
+      }
+    }
+  });
+
+  test('a sharper preset wins the majority of duels across seeds', () {
+    expectSharperWins(BotProfile.hard, BotProfile.normal);
+    expectSharperWins(BotProfile.normal, BotProfile.easy);
   });
 }

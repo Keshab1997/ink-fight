@@ -11,12 +11,12 @@ enum BotDifficulty { easy, normal, hard }
 /// One difficulty preset.
 ///
 /// A profile may only change *how well the bot plays* — its reaction, its
-/// appetite for blocking, how often it hesitates. It may never change what a
-/// hit does: the bot fires the same [InputCommand]s a player does and the
-/// controller resolves them on the same [MatchRules] table. That is the "fair
-/// practice opponent, not a cheating opponent" rule from
-/// docs/product/GAME_DESIGN_DOCUMENT.md §8, and the numbers below are the only
-/// place difficulty may live.
+/// appetite for blocking, how often it hesitates, how quickly it punishes. It
+/// may never change what a hit does: the bot fires the same [InputCommand]s a
+/// player does and the controller resolves them on the same [MatchRules]
+/// table. That is the "fair practice opponent, not a cheating opponent" rule
+/// from docs/product/GAME_DESIGN_DOCUMENT.md §8, and the numbers below are the
+/// only place difficulty may live.
 class BotProfile {
   const BotProfile({
     required this.difficulty,
@@ -28,6 +28,7 @@ class BotProfile {
     required this.hesitationChance,
     required this.recoveryMs,
     required this.preferredGap,
+    this.punishChance = 0,
   });
 
   final BotDifficulty difficulty;
@@ -35,12 +36,15 @@ class BotProfile {
   /// How often the bot gets to make a fresh decision.
   final int thinkIntervalMs;
 
-  /// Delay between seeing an attack wind up and being allowed to guard. It has
-  /// to stay below the heavy kick's startup or the bot could never block one,
-  /// which is why the fairness test pins that relationship.
+  /// Delay between seeing an attack wind up, or an opening open, and being
+  /// allowed to act on it. For a wind-up it has to stay below the heavy
+  /// kick's startup or the bot could never block one, which is why the
+  /// fairness test pins that relationship.
   final int reactionMs;
 
   /// Minimum gap between the bot's own attacks: it respects its cooldowns.
+  /// A punish and a swing at a stunned opponent are the two exceptions, and
+  /// both are documented where they happen.
   final int attackCooldownMs;
 
   /// Chance of actually guarding when it reacts in time. Never 1 — a bot that
@@ -63,6 +67,12 @@ class BotProfile {
   /// what makes its pressure uncomfortable.
   final double preferredGap;
 
+  /// Chance that the bot takes an opening it sees: the player's swing is in
+  /// recovery, or has just cut air. The roll is made once per opening, so a
+  /// bot either goes for an opening or lets it pass. Zero means the bot never
+  /// punishes at all.
+  final double punishChance;
+
   static const BotProfile easy = BotProfile(
     difficulty: BotDifficulty.easy,
     thinkIntervalMs: 50,
@@ -73,6 +83,7 @@ class BotProfile {
     hesitationChance: .35,
     recoveryMs: 320,
     preferredGap: 54,
+    punishChance: .15,
   );
 
   static const BotProfile normal = BotProfile(
@@ -85,6 +96,7 @@ class BotProfile {
     hesitationChance: .12,
     recoveryMs: 200,
     preferredGap: 52,
+    punishChance: .5,
   );
 
   static const BotProfile hard = BotProfile(
@@ -97,6 +109,7 @@ class BotProfile {
     hesitationChance: .03,
     recoveryMs: 120,
     preferredGap: 42,
+    punishChance: .85,
   );
 
   /// Normal is the default preset, per the design document.
@@ -142,12 +155,28 @@ class BotController {
   int _recoveryRemainingMs = 0;
   int _sequence = 0;
 
+  /// Match time the bot has been fed, in whole milliseconds. Reaction delays
+  /// are measured against it, so they hold whatever the frame rate is.
+  int _clockMs = 0;
+
+  /// Whether the opening the bot is tracking will be punished. Null while no
+  /// opening is open. Rolled once, when an opening first appears.
+  bool? _openingPunish;
+
+  /// Clock time when the current opening was first seen.
+  int _openingSeenAtMs = 0;
+
+  /// Set once the bot has committed to a punish in the current opening, so it
+  /// fires at most once per opening.
+  bool _punishSpent = false;
+
   /// Feeds the bot one frame of match time.
   void update(double dtSeconds, MatchController match) {
     if (!dtSeconds.isFinite || dtSeconds <= 0) {
       return;
     }
     final ms = dtSeconds * 1000;
+    _clockMs += ms.round();
     _attackCooldownRemainingMs = math.max(
       0,
       _attackCooldownRemainingMs - ms.round(),
@@ -169,6 +198,10 @@ class BotController {
     _attackCooldownRemainingMs = 0;
     _recoveryRemainingMs = 0;
     _sequence = 0;
+    _clockMs = 0;
+    _openingPunish = null;
+    _openingSeenAtMs = 0;
+    _punishSpent = false;
   }
 
   void _think(MatchController match) {
@@ -179,6 +212,7 @@ class BotController {
 
     final me = match.stateOf(fighter);
     final opponent = match.stateOf(_opponent());
+    _trackOpening(opponent);
     if (!me.canAct) {
       // Mid-attack, mid-jump, mid-block or stunned: nothing to decide, and a
       // command sent now would only be dropped.
@@ -202,24 +236,46 @@ class BotController {
       return;
     }
 
-    // 3. A beat of nothing. Easy rolls this often, and it is where its openings
+    // 3. An opening the bot committed to punishing. This runs ahead of the
+    //    hesitation roll: the punish is already the gamble that was rolled.
+    if (_punishDue(opponent)) {
+      _punish(match, opponent);
+      return;
+    }
+
+    // 4. A stunned opponent that a swing of ours would reach: keep swinging.
+    //    Pressure ignores the cooldown on purpose — the controller already
+    //    drops anything it cannot accept, and that is the only limit.
+    if (opponent.isStunned) {
+      final heavyLands = match.wouldConnect(fighter, FighterAction.heavyKick);
+      final jabLands = match.wouldConnect(fighter, FighterAction.lightPunch);
+      if (heavyLands || jabLands) {
+        final heavy = heavyLands && (!jabLands || _roll(profile.heavyChance));
+        _pressSwing(match, heavy);
+        return;
+      }
+    }
+
+    // 5. A beat of nothing. Easy rolls this often, and it is where its openings
     //    come from — it does not merely attack less hard, it hesitates.
     if (_roll(profile.hesitationChance)) {
       _hold(match);
       return;
     }
 
-    // 4. In range with the cooldown clear: swing. An airborne opponent floats
-    //    over the jab, so that answer is always the heavy kick.
+    // 6. In range with the cooldown clear: swing. An airborne opponent floats
+    //    over the jab, so that answer is always the heavy kick. Otherwise the
+    //    heavy is only started while the opponent's swing has not yet reached
+    //    its startup, because past that point the jab wins the trade.
     if (gap <= _attackGap && _attackCooldownRemainingMs <= 0) {
-      final heavy = opponent.isAirborne || _roll(profile.heavyChance);
-      _press(match, heavy ? InputAction.heavyKick : InputAction.lightPunch);
-      _attackCooldownRemainingMs = profile.attackCooldownMs;
-      _hold(match);
+      final heavy =
+          opponent.isAirborne ||
+          (_roll(profile.heavyChance) && !_opponentPastStartup(opponent));
+      _pressSwing(match, heavy);
       return;
     }
 
-    // 5. Otherwise it is spacing: close the gap, or back off when the opponent
+    // 7. Otherwise it is spacing: close the gap, or back off when the opponent
     //    is standing on top of it.
     if (gap > profile.preferredGap) {
       _push(match, opponent.x > me.x ? 1 : -1);
@@ -228,6 +284,76 @@ class BotController {
     } else {
       _hold(match);
     }
+  }
+
+  /// Tracks the opponent's opening, if it has one, and rolls once whether to
+  /// punish it. A zero punish chance never rolls, so it does not perturb the
+  /// random sequence the other rules draw from.
+  void _trackOpening(FighterState opponent) {
+    if (!_isOpening(opponent)) {
+      _openingPunish = null;
+      _punishSpent = false;
+      return;
+    }
+    if (_openingPunish == null) {
+      _openingSeenAtMs = _clockMs;
+      _openingPunish = profile.punishChance > 0 && _roll(profile.punishChance);
+    }
+  }
+
+  /// An opening is the opponent's swing once its active window has closed,
+  /// whether it connected or not, and also the moment a swing is known to
+  /// have whiffed. A swing that is still in startup or active is not one.
+  bool _isOpening(FighterState opponent) {
+    final frame = rules.reachOf(opponent.action);
+    if (frame == null) {
+      return false;
+    }
+    return opponent.attackWhiffed ||
+        opponent.actionElapsedMs >= frame.startupMs + frame.activeMs;
+  }
+
+  /// A punish is due once the bot has committed to the current opening, has
+  /// not already spent its one punish on it, and has waited out its reaction.
+  bool _punishDue(FighterState opponent) {
+    return _openingPunish == true &&
+        !_punishSpent &&
+        _isOpening(opponent) &&
+        _clockMs - _openingSeenAtMs >= profile.reactionMs;
+  }
+
+  /// The punish itself. It steps in at full speed, ignores both the cooldown
+  /// and [BotProfile.preferredGap], and swings with the attack that actually
+  /// connects: the jab first, and the heavy only when it lands and the
+  /// opponent's recovery is still longer than the heavy's startup.
+  void _punish(MatchController match, FighterState opponent) {
+    final me = match.stateOf(fighter);
+    if (match.wouldConnect(fighter, FighterAction.lightPunch)) {
+      _press(match, InputAction.lightPunch);
+      _punishSpent = true;
+      _hold(match);
+      return;
+    }
+
+    final swing = rules.reachOf(opponent.action);
+    final remaining = swing == null
+        ? 0
+        : swing.totalMs - opponent.actionElapsedMs;
+    if (remaining > rules.heavyAttack.startupMs &&
+        match.wouldConnect(fighter, FighterAction.heavyKick)) {
+      _press(match, InputAction.heavyKick);
+      _punishSpent = true;
+      _hold(match);
+      return;
+    }
+
+    _push(match, opponent.x > me.x ? 1 : -1);
+  }
+
+  /// Whether the opponent's current swing has already passed its startup.
+  bool _opponentPastStartup(FighterState opponent) {
+    final frame = rules.reachOf(opponent.action);
+    return frame != null && opponent.actionElapsedMs >= frame.startupMs;
   }
 
   /// True while the opponent is in the wind-up the bot could still guard
@@ -249,6 +375,13 @@ class BotController {
   }
 
   double get _attackGap => rules.heavyAttack.reach * .95;
+
+  /// Starts a swing, the jab or the heavy, and puts the cooldown back.
+  void _pressSwing(MatchController match, bool heavy) {
+    _press(match, heavy ? InputAction.heavyKick : InputAction.lightPunch);
+    _attackCooldownRemainingMs = profile.attackCooldownMs;
+    _hold(match);
+  }
 
   void _press(MatchController match, InputAction action) {
     _sequence++;
