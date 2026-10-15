@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1208,6 +1210,14 @@ void main() {
         entry.value,
       );
     }
+    final paper = tester.widget<Container>(
+      find.byKey(const ValueKey('round-end-paper')),
+    );
+    expect(
+      (paper.decoration! as BoxDecoration).gradient,
+      isNull,
+      reason: 'draws have no losing half',
+    );
     tester.view.physicalSize = const Size(640, 360);
     tester.view.devicePixelRatio = 1;
     await tester.pump();
@@ -1225,6 +1235,204 @@ void main() {
     );
     expect(find.text('HITS LANDED'), findsNothing);
   });
+
+  // Move/attack through the public controller, without running the bot.
+  // The arena then consumes the real resolved events once, just as in play.
+  void hurtTo(InkFightBattleGame game, FighterId victim, int threshold) {
+    final attacker = victim == FighterId.player
+        ? FighterId.rival
+        : FighterId.player;
+    final match = game.match;
+    for (
+      var i = 0;
+      i < 8000 && match.stateOf(victim).health >= threshold;
+      i++
+    ) {
+      final state = match.stateOf(attacker);
+      final gap = match.stateOf(victim).x - state.x;
+      final approach = gap.abs() > match.rules.lightAttack.reach * .85;
+      match.setMoveAxis(attacker, approach ? gap.sign : 0);
+      if (!approach && state.canAct) {
+        match.submit(
+          InputCommand(
+            fighter: attacker,
+            action: InputAction.lightPunch,
+            sequence: 10000 + i,
+          ),
+        );
+      }
+      match.tick(.016);
+    }
+    match.setMoveAxis(attacker, 0);
+    expect(match.stateOf(victim).health, lessThan(threshold));
+    game.update(.000001);
+  }
+
+  Future<List<int>> dripAlpha(WidgetTester tester, String label) async {
+    final paint = tester.widget<CustomPaint>(
+      find.byKey(ValueKey('health-drip-$label')),
+    );
+    final size = tester.getSize(find.byKey(ValueKey('health-drip-$label')));
+    final pixels = await tester.runAsync(() async {
+      final recorder = ui.PictureRecorder();
+      paint.painter!.paint(Canvas(recorder), size);
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(
+        size.width.ceil(),
+        size.height.ceil(),
+      );
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final bytes = data!.buffer.asUint8List();
+      final alpha = [for (var i = 3; i < bytes.length; i += 4) bytes[i]];
+      image.dispose();
+      picture.dispose();
+      return alpha;
+    });
+    return pixels!;
+  }
+
+  for (final victim in FighterId.values) {
+    testWidgets(
+      'low-health drip for $victim attaches, detaches and clears on recovery',
+      (tester) async {
+        final game = await mountFight(tester);
+        await tester.tap(find.text('GOT IT'));
+        await tester.pump();
+        pastCountdown(game);
+        game.pauseEngine();
+        final label = victim == FighterId.player ? 'YOU' : 'CRIMSON RIVAL';
+        final drip = find.byKey(ValueKey('health-drip-$label'));
+        expect(drip, findsNothing, reason: 'healthy bars stay dry');
+        hurtTo(game, victim, 25);
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(drip, findsOneWidget);
+        final health = game.match.stateOf(victim).health;
+        expect(health, inInclusiveRange(1, 24));
+        final bar = find.byKey(ValueKey('health-live-$label'));
+        final barRect = tester.getRect(bar);
+        final dripRect = tester.getRect(drip);
+        expect(dripRect.top, greaterThanOrEqualTo(barRect.bottom));
+        expect(dripRect.height, 8);
+        expect(dripRect.width, barRect.width);
+        final live = tester.widget<LinearProgressIndicator>(bar).value;
+        expect(live, health / game.match.rules.health);
+        await tester.pump(const Duration(milliseconds: 300));
+        final attached = await dripAlpha(tester, label);
+        final width = tester.getSize(drip).width.ceil();
+        expect(
+          attached.take(width).any((alpha) => alpha > 0),
+          isTrue,
+          reason: 'the attached neck starts below the live fill',
+        );
+        await tester.pump(const Duration(milliseconds: 900));
+        final detached = await dripAlpha(tester, label);
+        expect(
+          detached.take(width).every((alpha) => alpha == 0),
+          isTrue,
+          reason: 'the neck is gone once the bead detaches',
+        );
+        expect(
+          detached.any((alpha) => alpha > 0),
+          isTrue,
+          reason: 'one faint falling drop remains in the gutter',
+        );
+        expect(
+          tester.widget<LinearProgressIndicator>(bar).value,
+          live,
+          reason: 'a drip never modifies health',
+        );
+        game.restartMatch();
+        await tester.pump();
+        expect(
+          drip,
+          findsNothing,
+          reason: 'recovery clears detached ink immediately',
+        );
+        expect(find.text('100%'), findsNWidgets(2));
+      },
+    );
+  }
+
+  testWidgets(
+    'escalating stats keep sound-off hits silent and reset on rematch',
+    (tester) async {
+      final sounds = _RecordingFightSounds();
+      final game = await mountFight(
+        tester,
+        settings: InkSettings(soundOn: false),
+        sounds: sounds,
+      );
+      await tester.tap(find.text('GOT IT'));
+      await tester.pump();
+      pastCountdown(game);
+      game.pauseEngine();
+      hurtTo(game, FighterId.rival, 80);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(game.stats.combo, greaterThanOrEqualTo(4));
+      expect(game.stats.hitPitchCombo, game.stats.combo);
+      expect(
+        sounds.cues,
+        isEmpty,
+        reason: 'the existing gate precedes every escalating cue',
+      );
+      game.restartMatch();
+      await tester.pump();
+      expect(game.stats.hitPitchCombo, 0);
+      expect(sounds.cues, isEmpty);
+    },
+  );
+
+  for (final victim in FighterId.values) {
+    testWidgets('only $victim losing half receives the consequence wash', (
+      tester,
+    ) async {
+      final game = await mountFight(tester);
+      await tester.tap(find.text('GOT IT'));
+      await tester.pump();
+      pastCountdown(game);
+      game.pauseEngine();
+      hurtTo(game, victim, 1);
+      for (var i = 0; i < 90 && !game.roundEndCardVisible; i++) {
+        game.update(.017);
+      }
+      expect(game.roundEndCardVisible, isTrue);
+      expect(
+        game.match.outcome,
+        victim == FighterId.player
+            ? MatchOutcome.rivalWin
+            : MatchOutcome.playerWin,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 180));
+      final face = tester.widget<Container>(
+        find.byKey(const ValueKey('round-end-paper')),
+      );
+      final gradient =
+          (face.decoration! as BoxDecoration).gradient! as LinearGradient;
+      final white = Colors.white;
+      final winnerColours = victim == FighterId.player
+          ? gradient.colors.skip(2)
+          : gradient.colors.take(2);
+      final loserColours = victim == FighterId.player
+          ? gradient.colors.take(2)
+          : gradient.colors.skip(2);
+      expect(winnerColours, everyElement(white));
+      expect(loserColours, everyElement(isNot(white)));
+      expect(gradient.stops, [0, .5, .5, 1]);
+      expect(
+        find.byKey(const ValueKey('health-drip-YOU')),
+        findsNothing,
+        reason: victim == FighterId.player
+            ? 'a KO bar is dry'
+            : 'healthy player is dry',
+      );
+      expect(
+        find.byKey(const ValueKey('health-drip-CRIMSON RIVAL')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('the arena HUD fits 640x360 without overflow', (tester) async {
     final game = await mountFight(tester);

@@ -79,7 +79,9 @@ class _BotFightScreenState extends State<BotFightScreen>
     _game = InkFightBattleGame(
       botProfile: BotProfile.forDifficulty(widget.difficulty),
       // The app path is the real thing; a test hands in its own seam.
-      sounds: widget.sounds ?? const FlameFightSounds(),
+      sounds:
+          widget.sounds ??
+          FlameFightSounds(hitCombo: () => _game.stats.hitPitchCombo),
     );
     _applyPreferences();
     widget.settings.addListener(_applyPreferences);
@@ -500,9 +502,45 @@ class _RoundEndCard extends StatelessWidget {
         ),
       ),
       child: Container(
+        key: const ValueKey('round-end-paper'),
         padding: const EdgeInsets.fromLTRB(28, 22, 28, 24),
         decoration: BoxDecoration(
           color: InkColors.white,
+          // Left = YOU, right = RIVAL, matching the HUD. A draw has no
+          // losing side. The winning half remains literally white paper.
+          gradient: switch (game.match.outcome) {
+            MatchOutcome.playerWin => LinearGradient(
+              colors: [
+                InkColors.white,
+                InkColors.white,
+                Color.alphaBlend(
+                  InkColors.ink.withValues(alpha: .035),
+                  InkColors.white,
+                ),
+                Color.alphaBlend(
+                  const Color(0xFFC51F3A).withValues(alpha: .10),
+                  InkColors.white,
+                ),
+              ],
+              stops: const [0, .5, .5, 1],
+            ),
+            MatchOutcome.rivalWin => LinearGradient(
+              colors: [
+                Color.alphaBlend(
+                  const Color(0xFFC51F3A).withValues(alpha: .10),
+                  InkColors.white,
+                ),
+                Color.alphaBlend(
+                  InkColors.ink.withValues(alpha: .035),
+                  InkColors.white,
+                ),
+                InkColors.white,
+                InkColors.white,
+              ],
+              stops: const [0, .5, .5, 1],
+            ),
+            MatchOutcome.draw || null => null,
+          },
           borderRadius: BorderRadius.circular(19),
           border: Border.all(color: InkColors.ink, width: 2),
         ),
@@ -892,6 +930,7 @@ class _HudHealthState extends State<_HudHealth> {
   double _trailElapsedMs = _HudHealth._trailDurationMs;
   double _flash = 0;
   Duration _lastTick = Duration.zero;
+  Duration _dripEpoch = Duration.zero;
 
   @override
   void initState() {
@@ -899,6 +938,7 @@ class _HudHealthState extends State<_HudHealth> {
     _trail = widget.value;
     _trailStart = _trail;
     _lastTick = widget.tick.value;
+    _dripEpoch = _lastTick;
     widget.tick.addListener(_onTick);
   }
 
@@ -909,6 +949,12 @@ class _HudHealthState extends State<_HudHealth> {
       oldWidget.tick.removeListener(_onTick);
       _lastTick = widget.tick.value;
       widget.tick.addListener(_onTick);
+    }
+    if (widget.value > oldWidget.value ||
+        (widget.value < .25 && oldWidget.value >= .25)) {
+      // Discard any detached drop as soon as the live edge recovers. A new
+      // low-health interval grows a fresh bead instead of teleporting a drop.
+      _dripEpoch = widget.tick.value;
     }
     if (widget.value < oldWidget.value) {
       // Damage: the crisp bar snaps, the trail keeps the old edge, the bar
@@ -966,7 +1012,7 @@ class _HudHealthState extends State<_HudHealth> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 9, 12, 2),
       decoration: BoxDecoration(
         color: InkColors.white.withValues(alpha: .78),
         borderRadius: BorderRadius.circular(13),
@@ -1051,10 +1097,89 @@ class _HudHealthState extends State<_HudHealth> {
               ),
             ),
           ),
+          // This eight-pixel gutter replaces eight pixels of old bottom
+          // padding: no HUD growth, and never paint over the fill/fighters.
+          SizedBox(
+            height: 8,
+            width: double.infinity,
+            child: widget.value > 0 && widget.value < .25
+                ? IgnorePointer(
+                    child: CustomPaint(
+                      key: ValueKey('health-drip-${widget.label}'),
+                      painter: _HealthDripPainter(
+                        value: widget.value,
+                        tick: widget.tick,
+                        epoch: _dripEpoch,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
         ],
       ),
     );
   }
+}
+
+/// One slow bead grows from the live edge, detaches, falls and fades within
+/// the health panel's existing padding. Strictly clipped to the gutter, not
+/// the fill or arena. Repaint-only: no extra whole-HUD frame rebuilds.
+class _HealthDripPainter extends CustomPainter {
+  _HealthDripPainter({
+    required this.value,
+    required this.tick,
+    required this.epoch,
+  }) : super(repaint: tick);
+
+  final double value;
+  final ValueListenable<Duration> tick;
+  final Duration epoch;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final phase = ((tick.value - epoch).inMicroseconds / 1600000) % 1;
+    final x = (size.width * value)
+        .clamp(1.5, math.max(1.5, size.width - 1.5))
+        .toDouble();
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    final ink = Paint()..color = InkColors.inkSoft.withValues(alpha: .7);
+    if (phase < .6) {
+      final grow = phase / .6;
+      final end = 1 + 2.5 * grow;
+      ink
+        ..strokeWidth = .8
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(Offset(x, 0), Offset(x, end), ink);
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(x, end),
+          width: 1 + 1.5 * grow,
+          height: 1 + 2 * grow,
+        ),
+        ink,
+      );
+    } else {
+      final fall = (phase - .6) / .4;
+      ink.color = InkColors.inkSoft.withValues(alpha: .7 * (1 - fall));
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(x, 3.5 + 4 * fall),
+          width: 2.5,
+          height: 3,
+        ),
+        ink,
+      );
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _HealthDripPainter oldDelegate) =>
+      value != oldDelegate.value ||
+      tick != oldDelegate.tick ||
+      epoch != oldDelegate.epoch;
 }
 
 class _BattleControls extends StatelessWidget {
