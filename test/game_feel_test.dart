@@ -888,6 +888,12 @@ void main() {
     /// The guard bot: thinks every tick, never swings, and always raises its
     /// guard at an incoming swing — `blockChance: 1` on the bot's own seeded
     /// random, so the guard is deterministic, not lucky.
+    // A pure guard: it blocks every wind-up it sees and never swings itself.
+    // `hesitationChance: 1` is what actually stops it attacking — the long
+    // attack cooldown alone does not, because the cooldown starts at zero and
+    // the bot's *first* swing is always allowed. That swing used to land on
+    // the player and put its own impact cue into the recording, which is why
+    // "a guarded hit plays the clack and no impact" saw a `hitLight`.
     const guardBot = BotProfile(
       difficulty: BotDifficulty.hard,
       thinkIntervalMs: 16,
@@ -895,7 +901,7 @@ void main() {
       attackCooldownMs: 60000,
       blockChance: 1,
       heavyChance: 0,
-      hesitationChance: 0,
+      hesitationChance: 1,
       recoveryMs: 0,
       preferredGap: 40,
     );
