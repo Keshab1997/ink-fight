@@ -100,12 +100,14 @@ flickered 44 px backwards for one frame.
 - `heavy_kick_006`: leg retracting, arms balancing the motion.
 - `heavy_kick_007`: exact ready stance recovery, feet on baseline.
 
-### Block — 4 frames
+### Block — 6 frames (raise 000–001 · held loop 002–003 · release 004–005)
 
-- `block_000`: hands beginning to rise in front of face and torso.
-- `block_001`: complete guard pose with elbows tucked and feet stable.
-- `block_002`: guard absorbing an impact, small black-and-white impact mark beside the guard.
-- `block_003`: guard lowering back toward ready stance.
+- `block_000` (in-between, §5b): the guard rising. Both gloves are halfway up from the ready stance toward the high guard, at chin height, forearms coming up in front of the chest, elbows tucked; same planted feet and stance as idle. No impact spark. Its neighbours are `idle_000` and `block_001`.
+- `block_001`: hands rising in front of face and torso (as delivered, this is already almost the complete guard).
+- `block_002`: complete guard pose with elbows tucked and feet stable.
+- `block_003`: guard absorbing an impact, small black-and-white impact mark beside the guard.
+- `block_004` (in-between, §5b): the guard starting to lower. Both gloves are halfway down from the high guard toward the lowered guard, at chin height, elbows tucked; same planted feet. No impact spark, no burst. It is foot-registered (§5b), because the spark on `block_003` widens that frame's box.
+- `block_005`: guard lowering back toward ready stance.
 
 ### Hurt — 5 frames
 
@@ -242,6 +244,8 @@ step / mean silhouette change, before → after):
 | hurt | 56 px / 0.68 → 72 px / 0.52 ¹ | 14 px / 0.33 → 49 px / 0.26 ¹ |
 | heavy kick | 177 px / 0.44 → 216 px / 0.45 ² | 155 px / 0.36 → 155 px / 0.32 ³ |
 | hurt heavy | 219 px / 0.59 → 219 px / 0.55 | 178 px / 0.50 → 178 px / 0.46 |
+| block raise ⁴ | 33 px / 0.23 → 23 px / 0.18 | 0 px / 0.08 → 0 px / 0.05 |
+| block release ⁴ | 18 px / 0.26 → 27 px / 0.21 | 42 px / 0.27 → 29 px / 0.22 |
 
 ¹ Here the head measure includes the gloves thrown up by the hit. The planted
 feet stay inside the old frames' spread on every frame; the rival's stay within
@@ -254,6 +258,11 @@ identical, and registering 002 trades 0.57 + 0.57 against its neighbours for
 0.67 + 0.50. The head measure picks up the kicking leg.
 ³ Both largest steps are the jump into and out of the mirrored contact keyframe
 (above). The in-betweens do not change it.
+⁴ Measured from `idle_000` through the raise to the first held frame, and from
+the last held frame through the release back to `idle_000`. The rival's raise
+in-between moves the gloves inside his outline, so the silhouette barely sees
+it (0.01 to `block_001`). Its colour difference is in between, though: idle to
+guard 53.8, idle to the new frame 42.6, the new frame to the guard 20.2.
 
 Rejected, with the measurement: the player's idle 002 → 003 in-between, four
 attempts. Twice the scarf came out longer than in frame 003 (the largest head

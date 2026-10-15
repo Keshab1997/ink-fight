@@ -6,8 +6,8 @@
   "characters": {
     "bot_crimson_rival": {
       "source_archive": "assets/characters/originals/bot_crimson_rival",
-      "frame_count": 63,
-      "expected_frame_count": 63,
+      "frame_count": 65,
+      "expected_frame_count": 65,
       "frames": [
         {
           "file": "bot_crimson_rival_block_000.png",
@@ -28,6 +28,16 @@
           "file": "bot_crimson_rival_block_003.png",
           "animation": "block",
           "runtime": "assets/characters/runtime/bot_crimson_rival/block/bot_crimson_rival_block_003.png"
+        },
+        {
+          "file": "bot_crimson_rival_block_004.png",
+          "animation": "block",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/block/bot_crimson_rival_block_004.png"
+        },
+        {
+          "file": "bot_crimson_rival_block_005.png",
+          "animation": "block",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/block/bot_crimson_rival_block_005.png"
         },
         {
           "file": "bot_crimson_rival_defeat_000.png",
@@ -329,8 +339,8 @@
     },
     "player_ink_fighter": {
       "source_archive": "assets/characters/originals/player_ink_fighter",
-      "frame_count": 63,
-      "expected_frame_count": 63,
+      "frame_count": 65,
+      "expected_frame_count": 65,
       "frames": [
         {
           "file": "player_ink_fighter_block_000.png",
@@ -351,6 +361,16 @@
           "file": "player_ink_fighter_block_003.png",
           "animation": "block",
           "runtime": "assets/characters/runtime/player_ink_fighter/block/player_ink_fighter_block_003.png"
+        },
+        {
+          "file": "player_ink_fighter_block_004.png",
+          "animation": "block",
+          "runtime": "assets/characters/runtime/player_ink_fighter/block/player_ink_fighter_block_004.png"
+        },
+        {
+          "file": "player_ink_fighter_block_005.png",
+          "animation": "block",
+          "runtime": "assets/characters/runtime/player_ink_fighter/block/player_ink_fighter_block_005.png"
         },
         {
           "file": "player_ink_fighter_defeat_000.png",

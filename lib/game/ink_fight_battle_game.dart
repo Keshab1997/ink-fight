@@ -57,11 +57,13 @@ const List<int> _kHurtHeavyStepsMs = <int>[90, 45, 45, 120, 120];
 /// `rules.jumpMs`, so the landing frame meets the ground.
 const List<int> _kJumpStepsMs = <int>[100, 150, 150, 160, 140];
 
-/// §1 block: raise for 90 ms, hold frames 001–002 looping at 140 ms while the
-/// guard is up, release for the final 120 ms of `rules.blockHoldMs`.
-const List<int> _kBlockRaiseStepsMs = <int>[90];
+/// §1 block, 6 frames: the raise (000–001) shares 90 ms; the held guard loops
+/// 002–003 at 140 ms each while it is up; the release (004–005) shares the
+/// final 120 ms of `rules.blockHoldMs`. `_blockAnimation` finds the phases by
+/// summing these lists, so splitting a phase further never moves a boundary.
+const List<int> _kBlockRaiseStepsMs = <int>[45, 45];
 const List<int> _kBlockHoldStepsMs = <int>[140, 140];
-const List<int> _kBlockReleaseStepsMs = <int>[120];
+const List<int> _kBlockReleaseStepsMs = <int>[60, 60];
 
 /// §5 knockdown: the fall itself, 90 + 100 + 120 + 140 + 150 = 600 ms, then
 /// the defeat cycle takes over on the ground. A counter-hit knockdown mid-match
@@ -512,8 +514,17 @@ class InkFightBattleGame extends FlameGame {
       lightPunch: await recipe('light_punch', _kLightPunchStepsMs),
       heavyKick: await recipe('heavy_kick', _kHeavyKickStepsMs),
       blockRaise: await recipe('block', _kBlockRaiseStepsMs),
-      blockHold: await recipe('block', _kBlockHoldStepsMs, from: 1, loop: true),
-      blockRelease: await recipe('block', _kBlockReleaseStepsMs, from: 3),
+      blockHold: await recipe(
+        'block',
+        _kBlockHoldStepsMs,
+        from: _kBlockRaiseStepsMs.length,
+        loop: true,
+      ),
+      blockRelease: await recipe(
+        'block',
+        _kBlockReleaseStepsMs,
+        from: _kBlockRaiseStepsMs.length + _kBlockHoldStepsMs.length,
+      ),
       hurt: await recipe('hurt', _kHurtStepsMs),
       hurtHeavy: await recipe('hurt_heavy', _kHurtHeavyStepsMs),
       knockdown: await recipe('knockdown', _kKnockdownStepsMs),
@@ -550,10 +561,11 @@ class InkFightBattleGame extends FlameGame {
   /// lasts, and the release over the final 120 ms of the window.
   SpriteAnimation _blockAnimation(_FighterAnims anims, FighterState state) {
     final elapsedMs = _match.rules.blockHoldMs - state.blockRemainingMs;
-    if (elapsedMs < _kBlockRaiseStepsMs.first) {
+    if (elapsedMs < _kBlockRaiseStepsMs.fold<int>(0, (a, b) => a + b)) {
       return anims.blockRaise;
     }
-    if (state.blockRemainingMs > _kBlockReleaseStepsMs.first) {
+    if (state.blockRemainingMs >
+        _kBlockReleaseStepsMs.fold<int>(0, (a, b) => a + b)) {
       return anims.blockHold;
     }
     return anims.blockRelease;

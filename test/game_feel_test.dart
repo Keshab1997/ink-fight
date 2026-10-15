@@ -177,21 +177,23 @@ void main() {
       final player = playerOf(game);
 
       game.sendPlayerAction(InputAction.block);
-      tick(game, 2); // ~32 ms in: still the 90 ms raise
-      expect(player.animation!.frames, hasLength(1));
+      tick(game, 2); // ~32 ms in: still the 90 ms raise, now two frames
+      expect(player.animation!.frames, hasLength(2));
+      expect(totalMsOf(player), 90);
 
-      tick(game, 5); // ~112 ms: the held guard loops frames 001–002
+      tick(game, 5); // ~112 ms: the held guard loops frames 002–003
       expect(player.animation!.frames, hasLength(2));
       expect(player.animation!.loop, isTrue);
 
-      // The release frame covers the final 120 ms of the 640 ms hold.
+      // The two release frames cover the final 120 ms of the 640 ms hold.
       var guard = 0;
       while (game.match.stateOf(FighterId.player).blockRemainingMs > 120 &&
           guard++ < 60) {
         tick(game, 1);
       }
       expect(game.match.stateOf(FighterId.player).action, FighterAction.block);
-      expect(player.animation!.frames, hasLength(1));
+      expect(player.animation!.frames, hasLength(2));
+      expect(totalMsOf(player), 120);
       expect(player.animation!.loop, isFalse);
 
       // ...and the fighter is back on its feet afterwards.

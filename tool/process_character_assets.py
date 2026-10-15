@@ -43,6 +43,14 @@ FOOT_REGISTERED: dict[str, tuple[str, str]] = {
         "player_ink_fighter_idle_002.png",
         "player_ink_fighter_idle_004.png",
     ),
+    "player_ink_fighter_block_004.png": (
+        "player_ink_fighter_block_003.png",
+        "player_ink_fighter_block_005.png",
+    ),
+    "bot_crimson_rival_block_004.png": (
+        "bot_crimson_rival_block_003.png",
+        "bot_crimson_rival_block_005.png",
+    ),
 }
 
 
