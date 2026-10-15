@@ -293,6 +293,69 @@ void main() {
       },
     );
 
+    test(
+      'a counter-hit knockdown plays the fall, holds it, then stands',
+      () async {
+        final game = await loadedGame();
+        pastCountdown(game);
+        final match = game.match;
+        final rival = rivalOf(game);
+
+        // Walk the player to a gap the rival's jab cannot reach, but the heavy can.
+        game.setPlayerMoving(true);
+        var guard = 0;
+        while (match.distanceBetween(FighterId.player, FighterId.rival) > 52 &&
+            guard++ < 600) {
+          tick(game, 1);
+        }
+        game.setPlayerMoving(false);
+
+        // The rival throws a jab from out of reach and holds it in recovery;
+        // the player's heavy kick lands on it while it is still attacking.
+        match.submit(
+          const InputCommand(
+            fighter: FighterId.rival,
+            action: InputAction.lightPunch,
+            sequence: 1,
+          ),
+        );
+        game.sendPlayerAction(InputAction.heavyKick);
+
+        guard = 0;
+        while (!match.stateOf(FighterId.rival).isKnockedDown && guard++ < 120) {
+          tick(game, 1);
+        }
+        expect(match.stateOf(FighterId.rival).isKnockedDown, isTrue);
+
+        // The fall: the 600 ms knockdown cycle, first frame at 90 ms.
+        expect(rival.animation!.frames, hasLength(5));
+        expect(rival.animation!.frames.first.stepTime, .09);
+        expect(rival.animation!.loop, isFalse);
+
+        // Once the cycle has run out it holds its last frame on the floor, for
+        // as long as the rules keep the fighter down.
+        guard = 0;
+        while (visibleFrame(rival) < 4 && guard++ < 120) {
+          tick(game, 1);
+        }
+        expect(visibleFrame(rival), 4);
+        expect(match.stateOf(FighterId.rival).isKnockedDown, isTrue);
+
+        // Then the window ends and the rival is back on its feet.
+        guard = 0;
+        while (match.stateOf(FighterId.rival).isKnockedDown && guard++ < 300) {
+          tick(game, 1);
+        }
+        expect(match.stateOf(FighterId.rival).action, FighterAction.idle);
+        tick(game, 1);
+        expect(
+          rival.animation!.frames,
+          hasLength(4),
+          reason: 'idle cycle again',
+        );
+      },
+    );
+
     test('a match the clock decides reveals its card at once', () async {
       final game =
           await loadedGame(); // passive bot, idle player: nobody swings

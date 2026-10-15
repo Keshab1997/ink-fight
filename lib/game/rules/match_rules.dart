@@ -22,10 +22,12 @@ enum MatchOutcome { playerWin, rivalWin, draw }
 /// (`Idle → Move → Attack startup → Active hitbox → Recovery → Hitstun /
 /// Blockstun → …`).
 ///
-/// Knockdown is deliberately not modelled yet: a heavy hit pushes the target
-/// back and holds it in hitstun instead, until there is an animation to fall
-/// with. Same for dodge/dash, which the design document marks optional for the
-/// first slice.
+/// [knockdown] is the fall a counter-hit heavy kick puts its target through:
+/// the fighter is on the floor, cannot act, and cannot be hit until it stands
+/// again (see [MatchRules.knockdownMs]). An ordinary hit still only holds the
+/// target in hitstun, and a blow that takes the last of the health is a
+/// knockout, which never enters knockdown. Dodge/dash, which the design
+/// document marks optional for the first slice, is still not modelled.
 enum FighterAction {
   idle,
   walk,
@@ -35,6 +37,7 @@ enum FighterAction {
   block,
   hitstun,
   blockstun,
+  knockdown,
 }
 
 /// One attack's numbers, in the shape a fighting game publishes them.
@@ -103,6 +106,7 @@ class MatchRules {
     this.jumpMs = 700,
     this.blockHoldMs = 640,
     this.blockPushbackFactor = .4,
+    this.knockdownMs = 840,
     this.lightAttack = const AttackFrameData(
       startupMs: 90,
       activeMs: 70,
@@ -164,6 +168,12 @@ class MatchRules {
 
   /// A blocked hit still shoves the blocker, at this share of the knockback.
   final double blockPushbackFactor;
+
+  /// How long a counter-hit knockdown keeps the fighter down. The arena's
+  /// delivered fall is 600 ms (90 + 100 + 120 + 140 + 150) and holds the last
+  /// frame; the other 240 ms is the beat on the floor before the fighter
+  /// stands. The fall is presentation, so the window is what the rules count.
+  final int knockdownMs;
 
   final AttackFrameData lightAttack;
   final AttackFrameData heavyAttack;

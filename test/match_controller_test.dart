@@ -59,6 +59,83 @@ void punchOut(MatchController c) {
   }
 }
 
+FighterId opposite(FighterId id) =>
+    id == FighterId.player ? FighterId.rival : FighterId.player;
+
+/// Moves [mover] until the gap to the other fighter is within one step of
+/// [target]: toward the other fighter when too far, away when too close.
+void spaceTo(MatchController c, FighterId mover, double target) {
+  final rules = c.rules;
+  final step = rules.walkSpeed * rules.tickMs / 1000;
+  final toward = mover == FighterId.player ? 1.0 : -1.0;
+  var guard = 0;
+  while ((c.distanceBetween(FighterId.player, FighterId.rival) - target).abs() >
+          step &&
+      guard++ < 600) {
+    final gap = c.distanceBetween(FighterId.player, FighterId.rival);
+    c.setMoveAxis(mover, gap > target ? toward : -toward);
+    c.tick(rules.tickMs / 1000);
+  }
+  c.setMoveAxis(mover, 0);
+}
+
+/// Sets up a counter-hit on [victim]. The heavy-kick side walks to a gap the
+/// victim's jab cannot touch, then the victim throws the jab from there and
+/// holds it in recovery while the heavy kick lands from its own reach. Each
+/// fighter's sequence numbers must keep rising, so [sequence] has to be past
+/// anything that fighter has already sent. Only the walk ticks the clock;
+/// the caller decides how far to run after the presses.
+void counterHit(MatchController c, FighterId victim, int sequence) {
+  spaceTo(c, opposite(victim), 52);
+  press(c, victim, InputAction.lightPunch, sequence);
+  press(c, opposite(victim), InputAction.heavyKick, sequence);
+}
+
+/// Ticks until [victim] is down, then until it stands again. Returns how many
+/// milliseconds it spent on the floor.
+int fallTime(MatchController c, FighterId victim) {
+  final rules = c.rules;
+  final slice = rules.tickMs / 1000;
+  var guard = 0;
+  while (!c.stateOf(victim).isKnockedDown && guard++ < 200) {
+    c.tick(slice);
+  }
+  var onFloor = 0;
+  while (c.stateOf(victim).isKnockedDown && guard++ < 600) {
+    c.tick(slice);
+    onFloor += rules.tickMs;
+  }
+  return onFloor;
+}
+
+/// Keeps the other fighter swinging at [downed] for as long as it lies on the
+/// floor. Returns how many swings the controller accepted during the fall.
+int swingWhileDown(MatchController c, FighterId downed) {
+  final rules = c.rules;
+  final slice = rules.tickMs / 1000;
+  final attacker = opposite(downed);
+  var accepted = 0;
+  var sequence = 200;
+  var guard = 0;
+  while (c.stateOf(downed).isKnockedDown && guard++ < 600) {
+    final gap = c.distanceBetween(FighterId.player, FighterId.rival);
+    final swing = c.stateOf(attacker);
+    if (swing.canAct && gap <= rules.lightAttack.reach * .9) {
+      c.setMoveAxis(attacker, 0);
+      sequence++;
+      press(c, attacker, InputAction.lightPunch, sequence);
+      if (c.stateOf(attacker).action == FighterAction.lightPunch) {
+        accepted++;
+      }
+    } else if (swing.canAct) {
+      final toward = c.stateOf(downed).x > swing.x ? 1.0 : -1.0;
+      c.setMoveAxis(attacker, toward);
+    }
+    c.tick(slice);
+  }
+  return accepted;
+}
+
 void main() {
   test('the countdown gates input and the clock starts full', () {
     final c = MatchController();
@@ -708,6 +785,7 @@ void main() {
       FighterAction.block,
       FighterAction.hitstun,
       FighterAction.blockstun,
+      FighterAction.knockdown,
     ]) {
       expect(
         c.wouldConnect(FighterId.player, action),
@@ -745,5 +823,160 @@ void main() {
 
     run(c, rules.lightAttack.totalMs);
     expect(c.isInReach(FighterId.player), isFalse, reason: 'swing is over');
+  });
+
+  test('a counter-hit heavy kick puts the defender down', () {
+    final c = MatchController();
+    final rules = c.rules;
+    skipCountdown(c);
+
+    counterHit(c, FighterId.rival, 1);
+    run(c, rules.heavyAttack.startupMs + rules.heavyAttack.activeMs);
+
+    expect(c.rival.action, FighterAction.knockdown);
+    expect(c.rival.isKnockedDown, isTrue);
+    expect(c.rival.canAct, isFalse);
+    expect(c.rival.health, rules.health - rules.heavyAttack.damage);
+
+    final hits = c
+        .drainHitEvents()
+        .where((event) => event.kind == HitKind.hit)
+        .toList();
+    expect(hits, hasLength(1));
+    expect(hits.single.knockdown, isTrue);
+    expect(hits.single.ko, isFalse);
+  });
+
+  test('an ordinary hit never knocks down, counter or not', () {
+    // A jab into an idle fighter: ordinary hitstun.
+    final idle = MatchController();
+    skipCountdown(idle);
+    closeIn(idle);
+    press(idle, FighterId.player, InputAction.lightPunch, 1);
+    run(idle, idle.rules.lightAttack.totalMs);
+    expect(idle.rival.action, FighterAction.hitstun);
+
+    // A jab into a fighter that is itself attacking: still hitstun, because
+    // only a heavy kick is a counter. The player's swing resolves first.
+    final trading = MatchController();
+    skipCountdown(trading);
+    closeIn(trading);
+    press(trading, FighterId.player, InputAction.lightPunch, 1);
+    press(trading, FighterId.rival, InputAction.lightPunch, 1);
+    run(trading, trading.rules.lightAttack.totalMs);
+    expect(trading.rival.action, FighterAction.hitstun);
+    expect(trading.drainHitEvents().where((event) => event.knockdown), isEmpty);
+  });
+
+  test('a knockout blow goes to the KO path and never to knockdown', () {
+    final c = MatchController();
+    final rules = c.rules;
+    skipCountdown(c);
+
+    // Seven idle heavies leave the rival on 2 health.
+    for (var i = 0; i < 7; i++) {
+      closeIn(c);
+      press(c, FighterId.player, InputAction.heavyKick, i * 2 + 1);
+      run(c, rules.heavyAttack.totalMs + rules.heavyAttack.hitstunMs);
+    }
+    expect(c.rival.health, 2);
+
+    // The eighth is a counter-hit on a fighter that is attacking, and it
+    // would knock down, except that it is the killing blow.
+    counterHit(c, FighterId.rival, 20);
+    run(c, rules.heavyAttack.startupMs + rules.heavyAttack.activeMs);
+
+    expect(c.isFinished, isTrue);
+    expect(c.outcome, MatchOutcome.playerWin);
+    expect(c.rival.health, 0);
+    expect(c.rival.action, FighterAction.hitstun, reason: 'the KO path');
+    final ko = c
+        .drainHitEvents()
+        .where((event) => event.kind == HitKind.hit && event.ko)
+        .toList();
+    expect(ko, hasLength(1));
+    expect(ko.single.knockdown, isFalse);
+  });
+
+  test('no attack lands on a fighter lying down, from either side', () {
+    for (final downed in FighterId.values) {
+      final c = MatchController();
+      final rules = c.rules;
+      skipCountdown(c);
+
+      counterHit(c, downed, 1);
+      run(c, rules.heavyAttack.startupMs + rules.heavyAttack.activeMs);
+      expect(c.stateOf(downed).isKnockedDown, isTrue, reason: '$downed down');
+      final health = c.stateOf(downed).health;
+      c.drainHitEvents();
+
+      final accepted = swingWhileDown(c, downed);
+      expect(accepted, greaterThan(0), reason: 'the swings were real: $downed');
+      expect(c.stateOf(downed).health, health, reason: '$downed unharmed');
+      final landed = c
+          .drainHitEvents()
+          .where((event) => event.kind == HitKind.hit)
+          .toList();
+      expect(landed, isEmpty, reason: 'no hit while $downed is down');
+    }
+  });
+
+  test('a fighter lying down cannot act until it stands', () {
+    final c = MatchController();
+    final rules = c.rules;
+    skipCountdown(c);
+    counterHit(c, FighterId.rival, 1);
+    run(c, rules.heavyAttack.startupMs + rules.heavyAttack.activeMs);
+    expect(c.rival.isKnockedDown, isTrue);
+
+    press(c, FighterId.rival, InputAction.block, 90);
+    press(c, FighterId.rival, InputAction.jump, 91);
+    expect(c.rival.action, FighterAction.knockdown, reason: 'input is dropped');
+  });
+
+  test('the clock keeps running while the fighter is down', () {
+    final c = MatchController();
+    skipCountdown(c);
+    counterHit(c, FighterId.rival, 1);
+
+    final before = c.timeRemainingMs;
+    final onFloor = fallTime(c, FighterId.rival);
+    expect(onFloor, greaterThan(0));
+    expect(before - c.timeRemainingMs, greaterThanOrEqualTo(onFloor));
+    expect(c.timeRemainingMs, greaterThan(0));
+  });
+
+  test('the fighter stands when the knockdown window ends', () {
+    final c = MatchController();
+    final rules = c.rules;
+    skipCountdown(c);
+    counterHit(c, FighterId.rival, 1);
+
+    final onFloor = fallTime(c, FighterId.rival);
+    expect(c.rival.action, FighterAction.idle);
+    expect(c.rival.canAct, isTrue);
+    expect(c.rival.knockdownRemainingMs, 0);
+    // The window is 840 ms, counted in whole ticks: it ends on the first tick
+    // at or past the window.
+    expect(onFloor, greaterThanOrEqualTo(rules.knockdownMs - rules.tickMs));
+    expect(onFloor, lessThan(rules.knockdownMs + rules.tickMs));
+  });
+
+  test('the pushbox still separates the bodies while one is down', () {
+    final c = MatchController();
+    final rules = c.rules;
+    skipCountdown(c);
+    counterHit(c, FighterId.rival, 1);
+    run(c, rules.heavyAttack.startupMs + rules.heavyAttack.activeMs);
+    expect(c.rival.isKnockedDown, isTrue);
+
+    // The player walks straight into the body on the floor.
+    c.setMoveAxis(FighterId.player, 1);
+    run(c, 400);
+    expect(c.rival.isKnockedDown, isTrue, reason: 'still on the floor');
+    expect(
+      c.rival.x - c.player.x,
+      greaterThanOrEqualTo(rules.minFighterDistance - .001),
+    );
   });
 }

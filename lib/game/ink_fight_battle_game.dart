@@ -46,9 +46,15 @@ const List<int> _kBlockHoldStepsMs = <int>[140, 140];
 const List<int> _kBlockReleaseStepsMs = <int>[120];
 
 /// §5 knockdown: the fall itself, 90 + 100 + 120 + 140 + 150 = 600 ms, then
-/// the defeat cycle takes over on the ground.
+/// the defeat cycle takes over on the ground. A counter-hit knockdown mid-match
+/// plays this same cycle and holds its last frame until the rules window ends;
+/// the KO cinematic keeps its own use of it.
 const List<int> _kKnockdownStepsMs = <int>[90, 100, 120, 140, 150];
 const double _kKnockdownTotalMs = 600;
+
+/// The thud a counter-hit knockdown leaves: a heavy jolt a little longer than
+/// the heavy hit's own, and the floor dust that lingers as the body lands.
+const double _kKnockdownThudMs = 300;
 
 /// §2 hit-stop: confirmed hits freeze fighters and the match clock — never
 /// the ink (§3) — for a weightier blow the heavier the attack.
@@ -654,6 +660,15 @@ class InkFightBattleGame extends FlameGame {
             ampPx: event.heavy ? _kShakeHeavyAmpPx : _kShakeLightAmpPx,
             lifeMs: event.heavy ? _kShakeHeavyMs : _kShakeLightMs,
           );
+          if (event.knockdown) {
+            // The floor takes the weight: the thud replaces the hit's jolt,
+            // and the dust is kicked up where the body comes down.
+            _shake = _Shake(
+              ampPx: _kShakeHeavyAmpPx,
+              lifeMs: _kKnockdownThudMs,
+            );
+            _spawnKnockdownDust(event);
+          }
           _pull = _CameraPull(
             ampPx: event.heavy ? _kPullHeavyPx : _kPullLightPx,
             lifeMs: event.heavy ? _kPullHeavyMs : _kPullLightMs,
@@ -741,6 +756,30 @@ class InkFightBattleGame extends FlameGame {
       );
     }
     _bursts.add(_Burst(blobs: blobs, lifeMs: _kPuffMs));
+  }
+
+  /// The floor dust of a counter-hit knockdown: a low, wide puff kicked out
+  /// along the ground under the defender, drawn with the other ink.
+  void _spawnKnockdownDust(HitEvent event) {
+    final defenderX = _match.stateOf(event.defender).x;
+    final floor = ui.Offset(
+      defenderX / _match.rules.arenaWidth * size.x,
+      _baselineY - _fighterHeight() * .02,
+    );
+    final blobs = <_Blob>[];
+    for (var i = 0; i < 6; i++) {
+      final outward = i.isEven ? -1.0 : 1.0;
+      blobs.add(
+        _Blob(
+          x: floor.dx,
+          y: floor.dy,
+          vx: outward * (25 + 55 * _fxRandom.nextDouble()),
+          vy: -(4 + 10 * _fxRandom.nextDouble()),
+          r: 4 + 5 * _fxRandom.nextDouble(),
+        ),
+      );
+    }
+    _bursts.add(_Burst(blobs: blobs, lifeMs: _kKnockdownThudMs));
   }
 
   /// A swing on air: an ink streak swept ahead of the attacker plus the
@@ -1423,6 +1462,8 @@ class _FighterAnims {
     // Refined per phase by _blockAnimation(); the loop is the sane default.
     FighterAction.block => blockHold,
     FighterAction.hitstun || FighterAction.blockstun => hurt,
+    // Non-looping, so the last frame holds until the rules window ends.
+    FighterAction.knockdown => knockdown,
   };
 }
 

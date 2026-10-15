@@ -17,6 +17,7 @@ class FighterState {
     this.actionElapsedMs = 0,
     this.stunRemainingMs = 0,
     this.blockRemainingMs = 0,
+    this.knockdownRemainingMs = 0,
     this.jumpRemainingMs = 0,
     this.pushVelocity = 0,
     this.attackConnected = false,
@@ -38,6 +39,10 @@ class FighterState {
   final int actionElapsedMs;
   final int stunRemainingMs;
   final int blockRemainingMs;
+
+  /// Time left on the floor: the fall plus the beat before standing up. Zero
+  /// unless the fighter is in [FighterAction.knockdown].
+  final int knockdownRemainingMs;
   final int jumpRemainingMs;
 
   /// Units per second the fighter is still being shoved across its stun.
@@ -52,8 +57,8 @@ class FighterState {
   final bool attackWhiffed;
 
   /// Only idle and walking fighters may start something new. Attacks, jumps,
-  /// blocks and stuns are all committed windows, which is what makes a whiff
-  /// punishable.
+  /// blocks, stuns and knockdowns are all committed windows, which is what
+  /// makes a whiff punishable.
   bool get canAct =>
       action == FighterAction.idle || action == FighterAction.walk;
 
@@ -67,6 +72,8 @@ class FighterState {
 
   bool get isBlocking => action == FighterAction.block;
 
+  bool get isKnockedDown => action == FighterAction.knockdown;
+
   FighterState copyWith({
     double? x,
     int? health,
@@ -75,6 +82,7 @@ class FighterState {
     int? actionElapsedMs,
     int? stunRemainingMs,
     int? blockRemainingMs,
+    int? knockdownRemainingMs,
     int? jumpRemainingMs,
     double? pushVelocity,
     bool? attackConnected,
@@ -89,6 +97,7 @@ class FighterState {
       actionElapsedMs: actionElapsedMs ?? this.actionElapsedMs,
       stunRemainingMs: stunRemainingMs ?? this.stunRemainingMs,
       blockRemainingMs: blockRemainingMs ?? this.blockRemainingMs,
+      knockdownRemainingMs: knockdownRemainingMs ?? this.knockdownRemainingMs,
       jumpRemainingMs: jumpRemainingMs ?? this.jumpRemainingMs,
       pushVelocity: pushVelocity ?? this.pushVelocity,
       attackConnected: attackConnected ?? this.attackConnected,

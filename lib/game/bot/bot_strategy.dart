@@ -213,6 +213,12 @@ class BotController {
     final me = match.stateOf(fighter);
     final opponent = match.stateOf(_opponent());
     _trackOpening(opponent);
+    if (me.isKnockedDown) {
+      // On the floor there is nothing to decide, and a command sent now would
+      // only be dropped. Drop any walk held into the fall, and stop thinking.
+      _hold(match);
+      return;
+    }
     if (!me.canAct) {
       // Mid-attack, mid-jump, mid-block or stunned: nothing to decide, and a
       // command sent now would only be dropped.
@@ -267,7 +273,11 @@ class BotController {
     //    over the jab, so that answer is always the heavy kick. Otherwise the
     //    heavy is only started while the opponent's swing has not yet reached
     //    its startup, because past that point the jab wins the trade.
-    if (gap <= _attackGap && _attackCooldownRemainingMs <= 0) {
+    // A downed opponent cannot be hit, so a swing at it is a free punish for
+    // nobody. The bot waits and keeps spacing until it stands again.
+    if (!opponent.isKnockedDown &&
+        gap <= _attackGap &&
+        _attackCooldownRemainingMs <= 0) {
       final heavy =
           opponent.isAirborne ||
           (_roll(profile.heavyChance) && !_opponentPastStartup(opponent));

@@ -121,6 +121,7 @@ void main() {
       FighterAction.block,
       FighterAction.hitstun,
       FighterAction.blockstun,
+      FighterAction.knockdown,
     ]) {
       expect(rules.reachOf(action), isNull, reason: '$action has no hitbox');
     }

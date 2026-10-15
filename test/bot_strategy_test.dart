@@ -498,6 +498,95 @@ void main() {
     }
   });
 
+  test('the bot never swings at a downed opponent, and swings once up', () {
+    // The bot idles while the player walks into range of its heavy kick.
+    const waiting = BotProfile(
+      difficulty: BotDifficulty.easy,
+      thinkIntervalMs: 16,
+      reactionMs: 1,
+      attackCooldownMs: 0,
+      blockChance: 0,
+      heavyChance: 1,
+      hesitationChance: 1,
+      recoveryMs: 0,
+      preferredGap: 42,
+    );
+    // Then it attacks at every chance, with no cooldown: the only thing that
+    // can stop it from swinging at a downed player is the rule under test.
+    const striker = BotProfile(
+      difficulty: BotDifficulty.hard,
+      thinkIntervalMs: 16,
+      reactionMs: 1,
+      attackCooldownMs: 0,
+      blockChance: 0,
+      heavyChance: 1,
+      hesitationChance: 0,
+      recoveryMs: 0,
+      preferredGap: 42,
+    );
+    final match = MatchController();
+    final rules = match.rules;
+    final slice = rules.tickMs / 1000;
+    for (var ms = 0; ms < rules.countdownMs; ms += rules.tickMs) {
+      match.tick(slice);
+    }
+
+    var bot = BotController(profile: waiting, seed: 1);
+    match.setMoveAxis(FighterId.player, 1);
+    var guard = 0;
+    while (match.distanceBetween(FighterId.player, FighterId.rival) > 52 &&
+        guard++ < 600) {
+      bot.update(slice, match);
+      match.tick(slice);
+    }
+    match.setMoveAxis(FighterId.player, 0);
+
+    // Now the bot starts its heavy, and the player answers with a jab from
+    // out of the bot's reach that is still in recovery when the heavy lands.
+    bot = BotController(profile: striker, seed: 1);
+    guard = 0;
+    while (match.rival.action != FighterAction.heavyKick && guard++ < 200) {
+      bot.update(slice, match);
+      match.tick(slice);
+    }
+    expect(match.rival.action, FighterAction.heavyKick);
+    match.submit(
+      const InputCommand(
+        fighter: FighterId.player,
+        action: InputAction.lightPunch,
+        sequence: 1,
+      ),
+    );
+    bot.update(slice, match);
+    match.tick(slice);
+
+    // Watch for the player going down, then for any swing the bot starts
+    // while it lies there, then for the bot swinging again once it is up.
+    bool isSwing(FighterAction action) =>
+        action == FighterAction.lightPunch || action == FighterAction.heavyKick;
+    var prev = match.rival.action;
+    var wentDown = false;
+    var swungWhileDown = false;
+    var swungAfterUp = false;
+    for (var i = 0; i < 400 && !swungAfterUp; i++) {
+      bot.update(slice, match);
+      match.tick(slice);
+      final now = match.rival.action;
+      final started = isSwing(now) && !isSwing(prev);
+      prev = now;
+      if (match.player.isKnockedDown) {
+        wentDown = true;
+        swungWhileDown = swungWhileDown || started;
+      } else if (wentDown && started) {
+        swungAfterUp = true;
+      }
+    }
+
+    expect(wentDown, isTrue, reason: 'the counter-hit put the player down');
+    expect(swungWhileDown, isFalse, reason: 'no swing at a body on the floor');
+    expect(swungAfterUp, isTrue, reason: 'the bot attacks again once up');
+  });
+
   test('a sharper preset wins the majority of duels across seeds', () {
     expectSharperWins(BotProfile.hard, BotProfile.normal);
     expectSharperWins(BotProfile.normal, BotProfile.easy);

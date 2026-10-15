@@ -23,6 +23,7 @@ class HitEvent {
     required this.heavy,
     required this.x,
     required this.ko,
+    this.knockdown = false,
   });
 
   /// Who swung.
@@ -45,6 +46,10 @@ class HitEvent {
   /// True when this blow took the defender's health to zero — the knockout
   /// the arena plays its slow-motion finish for (GAME_FEEL §5).
   final bool ko;
+
+  /// True when this blow was a counter-hit heavy kick that put the defender
+  /// on the floor instead of into hitstun. Never set on a knockout.
+  final bool knockdown;
 }
 
 /// Runs one local match on [MatchRules], tick by tick.
@@ -361,6 +366,20 @@ class MatchController {
         }
         return slid.copyWith(stunRemainingMs: remaining);
 
+      case FighterAction.knockdown:
+        // On the floor the fighter is shoved by the rest of the knockback and
+        // cannot act. The clock and the pushbox keep running around it.
+        final slid = _slide(fighter, ms);
+        final remaining = fighter.knockdownRemainingMs - ms;
+        if (remaining <= 0) {
+          return slid.copyWith(
+            action: FighterAction.idle,
+            knockdownRemainingMs: 0,
+            pushVelocity: 0,
+          );
+        }
+        return slid.copyWith(knockdownRemainingMs: remaining);
+
       case FighterAction.idle:
       case FighterAction.walk:
         final axis = _axisOf(fighter.id);
@@ -415,6 +434,11 @@ class MatchController {
       }
 
       final defender = stateOf(_opponentOf(id));
+      // A fighter on the floor cannot be hit. The swing still runs its window
+      // and reports a whiff, which is the honest answer for a swing at air.
+      if (defender.isKnockedDown) {
+        continue;
+      }
       if (!_wouldLand(attacker, defender, attacker.action)) {
         continue;
       }
@@ -422,7 +446,19 @@ class MatchController {
       final blocked =
           defender.isBlocking &&
           (attacker.x - defender.x) * defender.facing > 0;
-      final taken = _takeHit(defender, frame, blocked: blocked);
+      // A heavy kick that lands on an attacking defender is a counter-hit. It
+      // knocks the defender down, unless the blow is the knockout: the
+      // knockout path owns that fall, so it never enters knockdown.
+      final counter =
+          attacker.action == FighterAction.heavyKick && defender.isAttacking;
+      final knockdown = !blocked && counter && defender.health > frame.damage;
+      final taken = _takeHit(
+        defender,
+        frame,
+        blocked: blocked,
+        knockdown: knockdown,
+        away: attacker.facing,
+      );
       _set(id, attacker.copyWith(attackConnected: true));
       _set(_opponentOf(id), taken);
       _hitEvents.add(
@@ -435,6 +471,7 @@ class MatchController {
           // the limbs actually meet (reach is centre-to-centre by design).
           x: (attacker.x + defender.x) / 2,
           ko: taken.health <= 0,
+          knockdown: knockdown,
         ),
       );
     }
@@ -444,7 +481,23 @@ class MatchController {
     FighterState defender,
     AttackFrameData frame, {
     required bool blocked,
+    bool knockdown = false,
+    double away = 1,
   }) {
+    if (knockdown) {
+      return defender.copyWith(
+        health: math.max(0, defender.health - frame.damage),
+        action: FighterAction.knockdown,
+        actionElapsedMs: 0,
+        blockRemainingMs: 0,
+        stunRemainingMs: 0,
+        knockdownRemainingMs: rules.knockdownMs,
+        // The knockback is spread across the fall, so the body slides back
+        // onto the floor instead of teleporting. It always goes away from the
+        // attacker, whichever side of the arena the blow came from.
+        pushVelocity: away * frame.knockback / (rules.knockdownMs / 1000),
+      );
+    }
     if (blocked) {
       final stunMs = math.max(frame.blockstunMs, rules.tickMs);
       return defender.copyWith(
