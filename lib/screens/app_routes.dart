@@ -22,14 +22,16 @@ abstract final class InkRoutes {
 
   /// The navigator's table, exactly what `MaterialApp.routes` wants.
   ///
-  /// [settings] is the app's one preference model: the table closes over it,
-  /// so every route — deep links included — builds screens that read and
-  /// write the same instance.
-  static Map<String, WidgetBuilder> table(InkSettings settings) =>
+  /// [preferences] is the app's one preference model: the table closes over
+  /// it, so every route — deep links included — builds screens that read and
+  /// write the same instance. The parameter is deliberately not named
+  /// `settings`: that identifier is already the `/settings` route constant
+  /// above, and a parameter of the same name would shadow it into a map key.
+  static Map<String, WidgetBuilder> table(InkSettings preferences) =>
       <String, WidgetBuilder>{
         home: (_) => const HomeScreen(),
         difficulty: (_) => const DifficultyScreen(),
         botFight: (_) => const BotFightScreen(),
-        settings: (_) => SettingsScreen(settings: settings),
+        settings: (_) => SettingsScreen(settings: preferences),
       };
 }
