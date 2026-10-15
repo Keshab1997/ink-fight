@@ -36,22 +36,33 @@ Using [CHARACTER_REFERENCE] as the exact character reference, create one standal
 
 The following action descriptions are appended one at a time to the universal frame prompt.
 
-### Idle — 5 frames (4 keyframes + 1 in-between)
+### Idle — 6 frames (4 keyframes + 2 in-betweens)
 
 - `idle_000`: neutral ready stance, knees relaxed, arms lowered but ready, calm focused face.
 - `idle_001`: same stance with a tiny chest rise and scarf or ink ribbon lifted a few millimetres.
 - `idle_002`: same stance with the opposite foot and shoulder carrying a very small amount of weight.
-- `idle_003`: return to the exact neutral ready stance, matching frame 000.
-- `idle_004` — **in-between, loop seam (003 → 000)**: idle loop-seam in-between with the same ready stance, face, gloves and feet as both neighbouring frames; the long black scarf tail falls back halfway toward the short resting flick of frame 000, with a tiny exhale in the chest, so the idle loop closes without a pop. (Both characters; see §5b.)
+- `idle_003` — **in-between (002 → 004)**: idle in-between with the same ready stance, face, gloves and feet as both neighbouring frames and the body in exactly the same place on the canvas; only the black scarf moves: medium-length tails lifting behind his neck, their tips ending level with the outer edge of the rear glove, clearly shorter than the long trailing tail of the frame after, and nothing reaching further left than the rear glove.
+- `idle_004`: return to the exact neutral ready stance, matching frame 000.
+- `idle_005` — **in-between, loop seam (004 → 000)**: idle loop-seam in-between with the same ready stance, face, gloves and feet as both neighbouring frames; the long black scarf tail falls back halfway toward the short resting flick of frame 000, with a tiny exhale in the chest, so the idle loop closes without a pop.
 
-### Walk — 6 frames
+`bot_crimson_rival` has all six. `player_ink_fighter` has five until its
+002 → 003 in-between passes the gate (§5b): its `idle_003` is the neutral
+return and `idle_004` the seam.
+
+### Walk — 8 frames (6 keyframes + 2 in-betweens, one per half-stride)
 
 - `walk_000`: left leg beginning forward, opposite arm counter-swing, head height unchanged.
 - `walk_001`: front foot extended, back heel lifting, readable balanced silhouette.
-- `walk_002`: passing pose with feet close, shoulders relaxed.
-- `walk_003`: opposite leg forward, mirror the weight shift without changing the face.
-- `walk_004`: opposite front foot extended, back heel lifting.
-- `walk_005`: passing pose returning toward the ready stance.
+- `walk_002` — **in-between (001 → 003)**: walk in-between, the front foot flattening onto the ground and taking the weight, the back foot peeling off the ground and starting to swing forward under the hips, the feet about halfway between their spread in the frame before and in the frame after; head height unchanged, gloves halfway between their positions in the two neighbouring frames.
+- `walk_003`: passing pose with feet close, shoulders relaxed.
+- `walk_004`: opposite leg forward, mirror the weight shift without changing the face.
+- `walk_005`: opposite front foot extended, back heel lifting.
+- `walk_006` — **in-between (005 → 007)**: walk in-between on the opposite leg, the extended front foot flattening and taking the weight, the back foot lifting and swinging forward under the hips (the rival's knee starting to bend forward), the feet closing halfway toward the passing pose of the frame after; head height unchanged, the gloves rising halfway toward the guard of the frame after.
+- `walk_007`: passing pose returning toward the ready stance.
+
+One in-between in each half-stride, at the same place, so both halves of the
+cycle keep the same number of frames. Uneven halves would make one step
+slower than the other while the body moves at a constant speed.
 
 ### Jump — 5 frames
 
@@ -181,12 +192,30 @@ facing lock above, and the head and feet staying within about 15 px of the
 neighbours' range. The tool centres each frame on its bounding box, so a scarf
 drawn longer than both neighbours shifts the whole body sideways. That reads as
 a twitch, which is worse than the gap the frame was meant to fill. Measure the
-whole loop before and after: the largest single-step jump must not grow.
+whole cycle before and after: the largest single-frame jump must not grow by
+more than that same tolerance.
 
-Rejected so far, with the measurement: the idle 002 → 003 in-between (three
-player attempts, two rival). Each drew the scarf at full trailing length, so the
-largest head jump of the loop grew from 13 px to 39 px (player) and from 43 px
-to 57 px (rival). It needs a scarf explicitly shorter than in frame 003.
+What the gate measured on the frames that landed (largest head jump per frame
+step / mean silhouette change, before → after):
+
+| Cycle | player | rival |
+|---|---|---|
+| idle | 13 px / 0.11 → 13 px / 0.09 (seam only) | 43 px / 0.23 → 29 px / 0.18 |
+| walk | 8 px / 0.18 → 8 px / 0.15 | 40 px / 0.25 → 42 px / 0.22 |
+
+Rejected, with the measurement: the player's idle 002 → 003 in-between, four
+attempts. Twice the scarf came out longer than in frame 003 (the largest head
+jump of the loop grew from 13 px to 39 px), once it rose straight up, and once
+the eyebrows were missing. The rival's version passed only on its third attempt,
+once the prompt fixed the scarf length explicitly ("tips ending level with the
+outer edge of the rear glove"). Fix lengths and directions explicitly like
+that; "halfway" alone is not enough.
+
+**Haze.** A generation can leave a faint grey ground smudge under a lifted foot
+(the rival's `walk_002` did). `tool/process_character_assets.py` now clears any
+light-grey blob that is detached from the character. The original keeps the
+smudge, and no hand-cleaned frame changes: every existing runtime frame came out
+byte-identical.
 
 **Provenance.** Generated 2026-10-15 with `gemini-3.1-flash-image` through the
 agent's image tool, from `player_ink_fighter/reference_clean_source.png` and

@@ -54,9 +54,10 @@ Other cycles: **block** (raise 90 ms → loop frames 1–2 at 140 ms while the
 guard is held → release 120 ms) · **hurt** (000 at 0, 001 at 70, 002 at 150,
 then hold the last frame until hitstun ends — 220 ms light, 420 ms heavy) ·
 **jump** (takeoff 100, rise 150, apex 150, fall 160, landing 140 = 700 ms =
-`jumpMs`) · **walk** (see §6) · **idle** (one 560 ms breath — the old
-4 × 140 ms — spread evenly over however many frames are delivered: 5 since the
-loop-seam in-between, 112 ms each).
+`jumpMs`) · **walk** (see §6; 8 frames since the in-betweens) · **idle** (one
+560 ms breath — the old 4 × 140 ms — spread evenly over however many frames are
+delivered: the rival's 6 hold ≈93 ms each, the player's 5 hold 112 ms until his
+last in-between lands).
 
 Rule of thumb for any future move: the contact frame sits inside the active
 window, and `sum(frame holds) == totalMs` from the rules table.
@@ -156,7 +157,7 @@ dependency, so it waits on Keshab.
 - **Walk**: the cycle must not skate. Measure the stride actually drawn in the
   frames (front foot spread) and set the per-frame step so the feet move the
   ground the controller does: `cycleMs = (unitsPerCycle / walkSpeed) * 1000`,
-  `stepTime = cycleMs / 6`. Current `0.09 s` × 6 = 540 ms → 42 arena units at
+  `stepTime = cycleMs / frames` (8 walk frames since the in-betweens). Current `0.09 s` × 6 = 540 ms → 42 arena units at
   `walkSpeed = 78`; the cycle reads right only if the art covers that.
 - **Landing**: a 90 ms squash (scale.y 0.94) on the landing frame, plus a small
   ink puff at the feet. No control change.

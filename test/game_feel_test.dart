@@ -208,9 +208,10 @@ void main() {
     test('idle keeps its 560 ms breath however many frames have landed', () async {
       final game = await loadedGame();
       pastCountdown(game);
-      for (final fighter in fightersOf(game)) {
-        // Four keyframes plus the loop-seam in-between (prompt pack §5).
-        expect(fighter.animation!.frames, hasLength(5));
+      // Four keyframes plus the loop-seam in-between (prompt pack §5); the
+      // rival also has the 002 → 003 one, the player's is still to come.
+      for (final (fighter, frames) in [(playerOf(game), 5), (rivalOf(game), 6)]) {
+        expect(fighter.animation!.frames, hasLength(frames));
         expect(fighter.animation!.loop, isTrue);
         expect(totalMsOf(fighter), closeTo(560, 1e-6));
       }
@@ -462,7 +463,7 @@ void main() {
         tick(game, 1);
         expect(
           rival.animation!.frames,
-          hasLength(5),
+          hasLength(6),
           reason: 'idle cycle again',
         );
       },
@@ -532,14 +533,18 @@ void main() {
       tick(game, 3); // both are walking towards each other now
 
       final walkSpeed = game.match.rules.walkSpeed;
-      expect(player.animation!.frames, hasLength(6));
-      expect(rival.animation!.frames, hasLength(6));
-      // cycleMs = (unitsPerCycle / walkSpeed) * 1000, stepTime = cycleMs / 6,
+      // Six keyframes plus two in-betweens, one per half-stride.
+      expect(player.animation!.frames, hasLength(8));
+      expect(rival.animation!.frames, hasLength(8));
+      // cycleMs = (unitsPerCycle / walkSpeed) * 1000, spread over the frames,
       // with the measured strides: player 529 canvas px ≈ 48.0 arena units,
       // rival 497 px ≈ 45.1 units (GAME_FEEL §6).
-      final playerUnits =
-          player.animation!.frames.first.stepTime * 6 * walkSpeed;
-      final rivalUnits = rival.animation!.frames.first.stepTime * 6 * walkSpeed;
+      double unitsPerCycle(SpriteAnimationComponent fighter) =>
+          fighter.animation!.frames.first.stepTime *
+          fighter.animation!.frames.length *
+          walkSpeed;
+      final playerUnits = unitsPerCycle(player);
+      final rivalUnits = unitsPerCycle(rival);
       expect(playerUnits, closeTo(48.0, .6));
       expect(rivalUnits, closeTo(45.1, .6));
     });
@@ -788,12 +793,12 @@ void main() {
 
       game.setPlayerMoveAxis(1);
       tick(game, 3);
-      expect(player.animation!.frames, hasLength(6));
+      expect(player.animation!.frames, hasLength(8));
       final full = player.animation!.frames.first.stepTime;
 
       game.setPlayerMoveAxis(.5);
       tick(game, 4);
-      expect(player.animation!.frames, hasLength(6)); // same cycle, rescaled
+      expect(player.animation!.frames, hasLength(8)); // same cycle, rescaled
       expect(
         player.animation!.frames.first.stepTime,
         closeTo(full * 2, full * .05),

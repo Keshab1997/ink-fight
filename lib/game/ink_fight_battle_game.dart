@@ -111,8 +111,9 @@ const double _kPuffMs = 150;
 const ui.Color _kCrimsonFleck = ui.Color(0xFFC51F3A);
 
 /// §6 measured strides: the widest sole-to-sole spread the delivered walk
-/// frames draw, in 1024 px canvas pixels (player walk_005: 529 px, rival
-/// walk_003: 497 px, measured at the ground line).
+/// frames draw, in 1024 px canvas pixels (player walk_007: 529 px, rival
+/// walk_004: 497 px, measured at the ground line). The walk in-betweens are
+/// narrower than these keyframes, so the strides did not change with them.
 const double _kPlayerWalkStridePx = 529;
 const double _kRivalWalkStridePx = 497;
 
@@ -479,17 +480,22 @@ class InkFightBattleGame extends FlameGame {
 
     // §6: the walk must not skate. The cycle may last exactly as long as the
     // controller needs to move the stride the art draws:
-    // cycleMs = (strideUnits / walkSpeed) * 1000, stepTime = cycleMs / 6.
+    // cycleMs = (strideUnits / walkSpeed) * 1000, spread evenly over however
+    // many frames the art delivers (8 since the in-betweens).
     final rules = _match.rules;
     final strideUnits =
         walkStridePx * _fighterWidthShare * rules.arenaWidth / 1024;
-    final walkStepTime = strideUnits / rules.walkSpeed / 6;
+    final walk = await evenCycle(
+      'walk',
+      totalMs: strideUnits / rules.walkSpeed * 1000,
+      loop: true,
+    );
 
     return _FighterAnims(
       // One breath lasts the 560 ms it did as 4 × 140 ms, however many
       // in-between frames have landed since (GAME_FEEL §1).
       idle: await evenCycle('idle', totalMs: 560, loop: true),
-      walk: await cycle('walk', stepTime: walkStepTime, loop: true),
+      walk: walk,
       jump: await recipe('jump', _kJumpStepsMs),
       lightPunch: await recipe('light_punch', _kLightPunchStepsMs),
       heavyKick: await recipe('heavy_kick', _kHeavyKickStepsMs),
@@ -501,7 +507,7 @@ class InkFightBattleGame extends FlameGame {
       knockdown: await recipe('knockdown', _kKnockdownStepsMs),
       victory: await cycle('victory', stepTime: .12, loop: true),
       defeat: await cycle('defeat', stepTime: .12),
-      walkBaseStepTime: walkStepTime,
+      walkBaseStepTime: walk.frames.first.stepTime,
     );
   }
 
