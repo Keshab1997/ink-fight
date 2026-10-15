@@ -79,6 +79,8 @@ class _BotFightScreenState extends State<BotFightScreen>
   /// persistence, no settings, no pubspec change.
   bool _showControlsHelp = true;
   int _lastComboBreak = 0;
+  final RoundResultTracker _roundResults = RoundResultTracker();
+  final ValueNotifier<RoundResult?> _roundResult = ValueNotifier(null);
   late final Future<AssetManifest> _resultAssets;
 
   @override
@@ -93,6 +95,7 @@ class _BotFightScreenState extends State<BotFightScreen>
           widget.sounds ??
           FlameFightSounds(hitCombo: () => _game.stats.hitPitchCombo),
     );
+    _sampleRoundResult();
     _game.stats.addListener(_onStatsChanged);
     _applyPreferences();
     widget.settings.addListener(_applyPreferences);
@@ -107,6 +110,7 @@ class _BotFightScreenState extends State<BotFightScreen>
     _game.stats.removeListener(_onStatsChanged);
     _ticker.dispose();
     _frame.dispose();
+    _roundResult.dispose();
     _game.pauseEngine();
     super.dispose();
   }
@@ -118,8 +122,18 @@ class _BotFightScreenState extends State<BotFightScreen>
     if (_game.soundEnabled) _game.sounds.play(FightCue.comboUnravel);
   }
 
+  void _sampleRoundResult() {
+    final match = _game.match;
+    _roundResult.value = _roundResults.observe(
+      roundNumber: match.roundNumber,
+      playerWins: match.playerRoundWins,
+      rivalWins: match.rivalRoundWins,
+    );
+  }
+
   void _rematch() {
     _game.restartMatch();
+    _sampleRoundResult();
     _wasFightBeat = false;
     _game.resumeEngine();
   }
@@ -136,6 +150,7 @@ class _BotFightScreenState extends State<BotFightScreen>
       if (!mounted) {
         return;
       }
+      _sampleRoundResult();
       final match = _game.match;
       if (match.isFinished) _game.stats.finishRound();
       final fightBeat =
@@ -287,7 +302,11 @@ class _BotFightScreenState extends State<BotFightScreen>
                 top: 14,
                 left: 72,
                 right: 72,
-                child: _BattleHud(game: _game, tick: _frame),
+                child: _BattleHud(
+                  game: _game,
+                  tick: _frame,
+                  roundResult: _roundResult,
+                ),
               ),
               Positioned(
                 top: 12,
@@ -328,6 +347,7 @@ class _BotFightScreenState extends State<BotFightScreen>
                   builder: (context, _, _) => _game.roundEndCardVisible
                       ? _RoundEndCard(
                           game: _game,
+                          tick: _frame,
                           onLeave: _quitToMenu,
                           onRematch: _rematch,
                           assets: _resultAssets,
@@ -359,9 +379,14 @@ class _BotFightScreenState extends State<BotFightScreen>
 }
 
 class _BattleHud extends StatelessWidget {
-  const _BattleHud({required this.game, required this.tick});
+  const _BattleHud({
+    required this.game,
+    required this.tick,
+    required this.roundResult,
+  });
 
   final InkFightBattleGame game;
+  final ValueListenable<RoundResult?> roundResult;
 
   /// The screen ticker: the chip's beats and the bars' trails ride it (see
   /// [_TimerChip] and [_HudHealth]), while the row itself still rebuilds on
@@ -384,6 +409,11 @@ class _BattleHud extends StatelessWidget {
                 listenable: game.stats,
                 builder: (context, _) => _HudHealth(
                   label: 'YOU',
+                  roundPips: _RoundWinPips(
+                    game: game,
+                    tick: tick,
+                    fighter: FighterId.player,
+                  ),
                   value: player.health / rules.health,
                   tick: tick,
                   combo: game.match.isFinished ? 0 : game.stats.combo,
@@ -394,13 +424,19 @@ class _BattleHud extends StatelessWidget {
             // The only corner of the HUD on the frame clock: the beats fall
             // between hudVersion bumps, so the chip repaints them itself.
             ListenableBuilder(
-              listenable: tick,
-              builder: (context, _) => _TimerChip(game: game),
+              listenable: Listenable.merge([tick, roundResult]),
+              builder: (context, _) =>
+                  _TimerChip(game: game, roundResult: roundResult.value),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _HudHealth(
                 label: 'CRIMSON RIVAL',
+                roundPips: _RoundWinPips(
+                  game: game,
+                  tick: tick,
+                  fighter: FighterId.rival,
+                ),
                 value: rival.health / rules.health,
                 tick: tick,
               ),
@@ -412,15 +448,67 @@ class _BattleHud extends StatelessWidget {
   }
 }
 
+/// Round scores live in the existing label row, never on the fill or timer.
+/// Only this tiny subtree samples each frame: a rules round may finish and
+/// restore identical health/clock values between two HUD snapshots.
+class _RoundWinPips extends StatelessWidget {
+  const _RoundWinPips({
+    required this.game,
+    required this.tick,
+    required this.fighter,
+  });
+  final InkFightBattleGame game;
+  final ValueListenable<Duration> tick;
+  final FighterId fighter;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: tick,
+    builder: (context, _) {
+      final match = game.match;
+      final wins = fighter == FighterId.player
+          ? match.playerRoundWins
+          : match.rivalRoundWins;
+      final target = match.rules.roundsToWin;
+      final name = fighter == FighterId.player ? 'You' : 'Crimson Rival';
+      return Semantics(
+        key: ValueKey('round-pips-${fighter.name}'),
+        label: '$name: $wins of $target round wins',
+        child: ExcludeSemantics(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < target; i++) ...[
+                if (i > 0) const SizedBox(width: 5),
+                Container(
+                  key: ValueKey('round-pip-${fighter.name}-$i'),
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i < wins ? InkColors.ink : InkColors.white,
+                    border: Border.all(color: InkColors.ink, width: 1.5),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 /// The clock between the health bars: the countdown's beat while the match
 /// counts in, the round clock while it fights, `END` once decided.
 ///
 /// The beat split is the screen's own four-count, but the length it splits
 /// comes from the rules — never a hardcoded 2000.
 class _TimerChip extends StatelessWidget {
-  const _TimerChip({required this.game});
+  const _TimerChip({required this.game, this.roundResult});
 
   final InkFightBattleGame game;
+  final RoundResult? roundResult;
 
   /// Beats in the countdown: 3 · 2 · 1 · FIGHT!.
   static const int _countdownBeats = 4;
@@ -470,6 +558,7 @@ class _TimerChip extends StatelessWidget {
     final pulse =
         .28 +
         .12 * math.cos(2 * math.pi * (10000 - match.timeRemainingMs) / 1600);
+    final result = match.phase == MatchPhase.countdown ? roundResult : null;
     return Container(
       key: const ValueKey('timer-chip-plate'),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -481,14 +570,37 @@ class _TimerChip extends StatelessWidget {
       ),
       child: Opacity(
         opacity: opacity,
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: InkColors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: InkColors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
+              ),
+            ),
+            if (result != null)
+              Padding(
+                key: const ValueKey('round-result-card'),
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  'ROUND ${result.number} ${switch (result.outcome) {
+                    MatchOutcome.playerWin => 'WON',
+                    MatchOutcome.rivalWin => 'LOST',
+                    MatchOutcome.draw => 'DRAW',
+                  }}',
+                  style: const TextStyle(
+                    color: InkColors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .4,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -499,11 +611,13 @@ class _TimerChip extends StatelessWidget {
 class _RoundEndCard extends StatelessWidget {
   const _RoundEndCard({
     required this.game,
+    required this.tick,
     required this.onLeave,
     required this.onRematch,
     required this.assets,
   });
   final VoidCallback onRematch;
+  final ValueListenable<Duration> tick;
   final Future<AssetManifest> assets;
 
   final InkFightBattleGame game;
@@ -517,9 +631,9 @@ class _RoundEndCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = switch (game.match.outcome) {
-      MatchOutcome.playerWin => 'YOU WIN',
-      MatchOutcome.rivalWin => 'CRIMSON RIVAL WINS',
-      MatchOutcome.draw || null => 'DRAW',
+      MatchOutcome.playerWin => 'MATCH WON',
+      MatchOutcome.rivalWin => 'MATCH LOST',
+      MatchOutcome.draw || null => 'MATCH DRAW',
     };
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
@@ -597,12 +711,14 @@ class _RoundEndCard extends StatelessWidget {
                 children: [
                   _ResultFighterArt(
                     fighter: FighterId.player,
+                    tick: tick,
                     outcome: game.match.outcome,
                     assets: assets,
                   ),
                   Expanded(
                     child: Text(
                       label,
+                      key: const ValueKey('match-result-label'),
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: InkColors.ink,
@@ -614,10 +730,20 @@ class _RoundEndCard extends StatelessWidget {
                   ),
                   _ResultFighterArt(
                     fighter: FighterId.rival,
+                    tick: tick,
                     outcome: game.match.outcome,
                     assets: assets,
                   ),
                 ],
+              ),
+            ),
+            Text(
+              'ROUNDS ${game.match.playerRoundWins} – ${game.match.rivalRoundWins}',
+              key: const ValueKey('match-result-score'),
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1,
               ),
             ),
             const SizedBox(height: 12),
@@ -686,20 +812,34 @@ class _RoundEndCard extends StatelessWidget {
   }
 }
 
-/// Reads the delivered final pose from the bundle manifest. Never assumes
-/// five (or any other count) of Agent A's frames, nor edits those assets.
-class _ResultFighterArt extends StatelessWidget {
+/// Loops every delivered pose frame, read-only. The screen ticker owns the
+/// lifetime, so rematch/unmount leaves no timer or animation controller behind.
+class _ResultFighterArt extends StatefulWidget {
   const _ResultFighterArt({
     required this.fighter,
+    required this.tick,
     required this.outcome,
     required this.assets,
   });
   final FighterId fighter;
+  final ValueListenable<Duration> tick;
   final MatchOutcome? outcome;
   final Future<AssetManifest> assets;
 
   @override
+  State<_ResultFighterArt> createState() => _ResultFighterArtState();
+}
+
+class _ResultFighterArtState extends State<_ResultFighterArt> {
+  Duration? _epoch;
+  bool _warmed = false;
+  static const int _frameMs = 120;
+  static const int _decodeWidth = 192;
+
+  @override
   Widget build(BuildContext context) {
+    final fighter = widget.fighter;
+    final outcome = widget.outcome;
     final name = fighter == FighterId.player
         ? 'player_ink_fighter'
         : 'bot_crimson_rival';
@@ -718,7 +858,7 @@ class _ResultFighterArt extends StatelessWidget {
       width: 64,
       height: 76,
       child: FutureBuilder<AssetManifest>(
-        future: assets,
+        future: widget.assets,
         builder: (context, snapshot) {
           final frames =
               snapshot.data
@@ -730,14 +870,35 @@ class _ResultFighterArt extends StatelessWidget {
               <String>[];
           frames.sort();
           if (frames.isEmpty) return const SizedBox.shrink();
-          return Image.asset(
-            frames.last,
-            key: ValueKey('result-art-$fighter'),
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-            semanticLabel:
-                '${fighter == FighterId.player ? 'You' : 'Crimson Rival'} $pose pose',
-            errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+          _epoch ??= widget.tick.value;
+          if (!_warmed) {
+            _warmed = true;
+            // Decode the small card versions ahead, not full-size arena art.
+            for (final frame in frames) {
+              precacheImage(
+                ResizeImage(AssetImage(frame), width: _decodeWidth),
+                context,
+                onError: (error, stack) {},
+              );
+            }
+          }
+          return ListenableBuilder(
+            listenable: widget.tick,
+            builder: (context, _) {
+              final elapsed = widget.tick.value - _epoch!;
+              final index = elapsed.inMilliseconds ~/ _frameMs % frames.length;
+              return Image.asset(
+                frames[index],
+                key: ValueKey('result-art-$fighter'),
+                fit: BoxFit.contain,
+                cacheWidth: _decodeWidth,
+                gaplessPlayback: true,
+                semanticLabel:
+                    '${fighter == FighterId.player ? 'You' : 'Crimson Rival'} $pose animation',
+                errorBuilder: (context, error, stack) =>
+                    const SizedBox.shrink(),
+              );
+            },
           );
         },
       ),
@@ -745,7 +906,7 @@ class _ResultFighterArt extends StatelessWidget {
   }
 }
 
-/// Whole-match player totals, not the final streak or the rival's blocks.
+/// Last-round player totals, not the final streak or the rival's blocks.
 class _ResultStats extends StatelessWidget {
   const _ResultStats({
     required this.stats,
@@ -1042,10 +1203,12 @@ class _HudHealth extends StatefulWidget {
     required this.label,
     required this.value,
     required this.tick,
+    required this.roundPips,
     this.combo = 0,
   });
 
   final String label;
+  final Widget roundPips;
   final int combo;
   final double value;
   final ValueListenable<Duration> tick;
@@ -1199,6 +1362,9 @@ class _HudHealthState extends State<_HudHealth> {
                   ),
                 ),
               ),
+              const SizedBox(width: 6),
+              widget.roundPips,
+              const SizedBox(width: 8),
               Text(
                 '${(widget.value * 100).round()}%',
                 style: const TextStyle(

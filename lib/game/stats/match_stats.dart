@@ -104,3 +104,49 @@ class MatchClockCues {
     return second <= 3 ? FightCue.countdownBlip : FightCue.clockTick;
   }
 }
+
+/// A presentation snapshot, never a rules decision or a HUD-owned round count.
+class RoundResult {
+  const RoundResult({required this.number, required this.outcome});
+  final int number;
+  final MatchOutcome outcome;
+}
+
+/// Reads consecutive authoritative score snapshots to describe the round that
+/// just closed. Never advances a round, awards wins, or delays a countdown.
+/// If observation skips rounds, show nothing rather than inventing a result.
+class RoundResultTracker {
+  ({int roundNumber, int playerWins, int rivalWins})? _previous;
+  RoundResult? _result;
+
+  RoundResult? observe({
+    required int roundNumber,
+    required int playerWins,
+    required int rivalWins,
+  }) {
+    final previous = _previous;
+    _previous = (
+      roundNumber: roundNumber,
+      playerWins: playerWins,
+      rivalWins: rivalWins,
+    );
+    if (roundNumber == 1 || previous == null) {
+      return _result = null;
+    }
+    if (roundNumber == previous.roundNumber) return _result;
+    _result = null;
+    if (roundNumber != previous.roundNumber + 1) return null;
+    final playerDelta = playerWins - previous.playerWins;
+    final rivalDelta = rivalWins - previous.rivalWins;
+    final outcome = switch ((playerDelta, rivalDelta)) {
+      (1, 0) => MatchOutcome.playerWin,
+      (0, 1) => MatchOutcome.rivalWin,
+      (0, 0) => MatchOutcome.draw,
+      _ => null,
+    };
+    if (outcome != null) {
+      _result = RoundResult(number: previous.roundNumber, outcome: outcome);
+    }
+    return _result;
+  }
+}

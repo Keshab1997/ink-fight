@@ -13,6 +13,7 @@ import 'package:inkfight/game/rules/match_controller.dart';
 import 'package:inkfight/game/rules/match_rules.dart';
 import 'package:inkfight/screens/bot_fight_screen.dart';
 import 'package:inkfight/state/ink_settings.dart';
+import 'package:inkfight/theme/app_theme.dart';
 import 'package:inkfight/widgets/virtual_joystick.dart';
 
 class _RecordingFightSounds implements FightSounds {
@@ -157,8 +158,8 @@ void main() {
     expect(
       find.text(
         game.match.outcome == MatchOutcome.playerWin
-            ? 'YOU WIN'
-            : 'CRIMSON RIVAL WINS',
+            ? 'MATCH WON'
+            : 'MATCH LOST',
       ),
       findsOneWidget,
     );
@@ -345,7 +346,7 @@ void main() {
   }
 
   testWidgets(
-    'best-of-three draws replay countdown; only match end shows card',
+    'best-of-three draws show round notices; only match end shows match card',
     (tester) async {
       expect(BotFightScreen(settings: InkSettings()).rules.roundsToWin, 2);
       final game = await mountFight(tester, rules: MatchRules.standard);
@@ -364,28 +365,28 @@ void main() {
         }
         expect(guard, lessThan(5000));
         game.update(.001); // a positive render frame drains/syncs the boundary
-        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 1));
+        await tester.pump(); // apply the post-simulation round snapshot
         expect(game.match.playerRoundWins, 0);
         expect(game.match.rivalRoundWins, 0);
         if (round < 3) {
           expect(game.match.roundNumber, round + 1);
           expect(game.match.phase, MatchPhase.countdown);
           expect(find.text('3'), findsOneWidget);
+          expect(find.text('ROUND $round DRAW'), findsOneWidget);
           expect(find.text('100%'), findsNWidgets(2));
           expect(find.text('REMATCH'), findsNothing);
           expect(game.roundEndCardVisible, isFalse);
         } else {
           expect(game.match.roundNumber, 3);
           expect(game.match.outcome, MatchOutcome.draw);
-          expect(find.text('DRAW'), findsOneWidget);
+          expect(find.text('MATCH DRAW'), findsOneWidget);
           expect(find.text('REMATCH'), findsOneWidget);
           expect(game.roundEndCardVisible, isTrue);
         }
-        expect(
-          find.textContaining(RegExp(r'ROUND \d+')),
-          findsNothing,
-          reason: 'no HUD-local counter or fabricated round stamp',
-        );
+        if (round == 3) {
+          expect(find.byKey(const ValueKey('round-result-card')), findsNothing);
+        }
       }
       await tester.tap(find.text('REMATCH'));
       await tester.pump(const Duration(milliseconds: 17));
@@ -396,6 +397,200 @@ void main() {
       expect(find.text('REMATCH'), findsNothing);
     },
   );
+
+  // A round-boundary driver, unlike hurtTo's single-round health threshold.
+  // Rules decide the winner; this helper only sends real combat inputs.
+  void knockoutRound(InkFightBattleGame game, FighterId winner) {
+    final match = game.match;
+    while (match.phase == MatchPhase.countdown) {
+      match.tick(.016);
+    }
+    final round = match.roundNumber;
+    var guard = 0;
+    while (!match.isFinished && match.roundNumber == round && guard++ < 1000) {
+      final state = match.stateOf(winner);
+      final victim = winner == FighterId.player ? match.rival : match.player;
+      final gap = victim.x - state.x;
+      final approach = gap.abs() > match.rules.lightAttack.reach * .85;
+      match.setMoveAxis(winner, approach ? gap.sign : 0);
+      if (!approach && state.canAct) {
+        match.submit(
+          InputCommand(
+            fighter: winner,
+            action: InputAction.lightPunch,
+            sequence: guard,
+          ),
+        );
+      }
+      match.tick(.016);
+    }
+    expect(guard, lessThan(1000));
+    game.update(.000001); // drain closing hit; reset presentation, never scores
+  }
+
+  testWidgets(
+    'round pips show a lost round then a won match, and reset cleanly',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final game = await mountFight(
+          tester,
+          rules: const MatchRules(health: 6),
+        );
+        await tester.tap(find.text('GOT IT'));
+        await tester.pump();
+        game.pauseEngine();
+        tester.view.physicalSize = const Size(640, 360);
+        tester.view.devicePixelRatio = 1;
+        await tester.pump(const Duration(milliseconds: 1));
+
+        void expectPips(FighterId fighter, int wins) {
+          final label = fighter == FighterId.player ? 'You' : 'Crimson Rival';
+          expect(
+            find.bySemanticsLabel('$label: $wins of 2 round wins'),
+            findsOneWidget,
+          );
+          for (var i = 0; i < 2; i++) {
+            final pip = tester.widget<Container>(
+              find.byKey(ValueKey('round-pip-${fighter.name}-$i')),
+            );
+            final decoration = pip.decoration! as BoxDecoration;
+            expect(
+              decoration.color,
+              i < wins ? InkColors.ink : InkColors.white,
+            );
+            expect(
+              decoration.border,
+              Border.all(color: InkColors.ink, width: 1.5),
+            );
+          }
+          expect(
+            find.byKey(ValueKey('round-pip-${fighter.name}-2')),
+            findsNothing,
+          );
+        }
+
+        expectPips(FighterId.player, 0);
+        expectPips(FighterId.rival, 0);
+        for (final fighter in FighterId.values) {
+          final pips = tester.getRect(
+            find.byKey(ValueKey('round-pips-${fighter.name}')),
+          );
+          for (final bar in ['YOU', 'CRIMSON RIVAL']) {
+            expect(
+              pips.overlaps(
+                tester.getRect(find.byKey(ValueKey('health-live-$bar'))),
+              ),
+              isFalse,
+            );
+          }
+          expect(pips.overlaps(tester.getRect(find.text('3'))), isFalse);
+          expect(pips.top, greaterThanOrEqualTo(14));
+          expect(
+            pips.bottom,
+            lessThan(50),
+            reason: 'fixed label row above the arena, no HUD growth',
+          );
+        }
+
+        final winners = [FighterId.rival, FighterId.player, FighterId.player];
+        for (var i = 0; i < winners.length; i++) {
+          knockoutRound(game, winners[i]);
+          await tester.pump(const Duration(milliseconds: 1));
+          await tester.pump();
+          if (i < 2) {
+            expect(game.match.phase, MatchPhase.countdown);
+            expect(
+              game.match.countdownRemainingMs,
+              game.match.rules.countdownMs,
+            );
+            expect(
+              find.text('3'),
+              findsOneWidget,
+              reason: 'notice does not delay or cover countdown',
+            );
+            expect(
+              find.text(i == 0 ? 'ROUND 1 LOST' : 'ROUND 2 WON'),
+              findsOneWidget,
+            );
+            expect(find.text('REMATCH'), findsNothing);
+            expectPips(FighterId.player, i);
+            expectPips(FighterId.rival, 1);
+            // The notice is round-local and disappears on live combat.
+            while (game.match.phase == MatchPhase.countdown) {
+              game.match.tick(.016);
+            }
+            game.update(.000001);
+            await tester.pump(const Duration(milliseconds: 1));
+            expect(
+              find.byKey(const ValueKey('round-result-card')),
+              findsNothing,
+            );
+          }
+        }
+        expect(
+          game.match.outcome,
+          MatchOutcome.playerWin,
+          reason: 'losing a round is not losing the match',
+        );
+        for (var i = 0; i < 90 && !game.roundEndCardVisible; i++) {
+          game.update(.017);
+        }
+        await tester.pump(const Duration(milliseconds: 1));
+        await tester.pump(const Duration(milliseconds: 180));
+        expect(find.text('MATCH WON'), findsOneWidget);
+        expect(find.text('ROUNDS 2 – 1'), findsOneWidget);
+        expect(find.byKey(const ValueKey('round-result-card')), findsNothing);
+        expectPips(FighterId.player, 2);
+        expectPips(FighterId.rival, 1);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('REMATCH'));
+        await tester.pump(const Duration(milliseconds: 1));
+        await tester.pump();
+        game.pauseEngine();
+        expectPips(FighterId.player, 0);
+        expectPips(FighterId.rival, 0);
+        expect(find.text('3'), findsOneWidget);
+        expect(find.byKey(const ValueKey('round-result-card')), findsNothing);
+        expect(find.byKey(const ValueKey('match-result-label')), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'no result animation survives unmount',
+        );
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('pips use the configured win target rather than assuming two', (
+    tester,
+  ) async {
+    final game = await mountFight(
+      tester,
+      rules: const MatchRules(roundsToWin: 3),
+    );
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    game.pauseEngine();
+    for (final fighter in FighterId.values) {
+      for (var i = 0; i < game.match.rules.roundsToWin; i++) {
+        expect(
+          find.byKey(ValueKey('round-pip-${fighter.name}-$i')),
+          findsOneWidget,
+        );
+      }
+      expect(find.byKey(ValueKey('round-pip-${fighter.name}-3')), findsNothing);
+    }
+    expect(
+      find.byKey(const ValueKey('round-result-card')),
+      findsNothing,
+      reason: 'a fresh match has no previous-round result',
+    );
+  });
 
   testWidgets('pause freezes the match clock and RESUME runs it again', (
     tester,
@@ -1502,10 +1697,33 @@ void main() {
         final image = tester.widget<Image>(
           find.byKey(ValueKey('result-art-$fighter')),
         );
+        String framePath() {
+          final frame = tester.widget<Image>(
+            find.byKey(ValueKey('result-art-$fighter')),
+          );
+          return ((frame.image as ResizeImage).imageProvider as AssetImage)
+              .assetName;
+        }
+
         expect(
-          (image.image as AssetImage).assetName,
-          paths.last,
-          reason: 'delivered final pose, discovered without a hard-coded frame count',
+          ((image.image as ResizeImage).imageProvider as AssetImage).assetName,
+          isIn(paths),
+        );
+        final first = framePath();
+        final seen = <String>{};
+        for (var i = 0; i < paths.length; i++) {
+          seen.add(framePath());
+          await tester.pump(const Duration(milliseconds: 120));
+        }
+        expect(
+          seen,
+          unorderedEquals(paths),
+          reason: 'play every delivered $pose frame, without assuming a count',
+        );
+        expect(
+          framePath(),
+          first,
+          reason: 'the cycle loops instead of holding a still',
         );
       }
       final seconds =

@@ -14,6 +14,84 @@ HitEvent event(FighterId attacker, HitKind kind, {bool ko = false}) => HitEvent(
 );
 
 void main() {
+  group('read-only round result feedback', () {
+    for (final outcome in MatchOutcome.values) {
+      test('consecutive scores describe $outcome once', () {
+        final tracker = RoundResultTracker();
+        expect(
+          tracker.observe(roundNumber: 1, playerWins: 0, rivalWins: 0),
+          isNull,
+        );
+        final player = outcome == MatchOutcome.playerWin ? 1 : 0;
+        final rival = outcome == MatchOutcome.rivalWin ? 1 : 0;
+        final result = tracker.observe(
+          roundNumber: 2,
+          playerWins: player,
+          rivalWins: rival,
+        );
+        expect(result!.number, 1);
+        expect(result.outcome, outcome);
+        expect(
+          tracker.observe(roundNumber: 2, playerWins: player, rivalWins: rival),
+          same(result),
+        );
+        expect(
+          tracker.observe(roundNumber: 1, playerWins: 0, rivalWins: 0),
+          isNull,
+          reason:
+              'rematch/restart clears presentation, not a fake round result',
+        );
+      });
+    }
+    test('round lost then round won is not a match decision', () {
+      final tracker = RoundResultTracker();
+      tracker.observe(roundNumber: 1, playerWins: 0, rivalWins: 0);
+      expect(
+        tracker.observe(roundNumber: 2, playerWins: 0, rivalWins: 1)!.outcome,
+        MatchOutcome.rivalWin,
+      );
+      final result = tracker.observe(
+        roundNumber: 3,
+        playerWins: 1,
+        rivalWins: 1,
+      )!;
+      expect(result.number, 2);
+      expect(result.outcome, MatchOutcome.playerWin);
+      // A winning score changes inside the last round. There is no new
+      // round snapshot; the real match outcome is read separately by the card.
+      expect(
+        tracker.observe(roundNumber: 3, playerWins: 2, rivalWins: 1),
+        same(result),
+      );
+    });
+    test('late mount or skipped rounds never invent the last result', () {
+      final tracker = RoundResultTracker();
+      expect(
+        tracker.observe(roundNumber: 2, playerWins: 1, rivalWins: 0),
+        isNull,
+      );
+      expect(
+        tracker.observe(roundNumber: 4, playerWins: 2, rivalWins: 1),
+        isNull,
+      );
+      final result = tracker.observe(
+        roundNumber: 5,
+        playerWins: 2,
+        rivalWins: 1,
+      )!;
+      expect(result.number, 4);
+      expect(result.outcome, MatchOutcome.draw);
+    });
+    test('ambiguous score deltas are not guessed', () {
+      final tracker = RoundResultTracker();
+      tracker.observe(roundNumber: 1, playerWins: 0, rivalWins: 0);
+      expect(
+        tracker.observe(roundNumber: 2, playerWins: 1, rivalWins: 1),
+        isNull,
+      );
+    });
+  });
+
   test('clean player hits count once, including the knockout', () {
     final stats = MatchStats();
     addTearDown(stats.dispose);
