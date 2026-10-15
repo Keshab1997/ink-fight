@@ -20761,7 +20761,7 @@ UI(){var s=0,r=A.B(t.H),q=1,p=[],o,n,m,l,k,j,i,h
 var $async$UI=A.C(function(a,b){if(a===1){p.push(b)
 s=q}for(;;)switch(s){case 0:n=t.i,m=0
 case 2:if(!(m<11)){s=4
-break}o=B.EV[m]
+break}o=B.EW[m]
 if($.afP.Z(o)){s=3
 break}q=6
 l=A.atk(o)
@@ -66401,7 +66401,7 @@ s=6
 return A.m(n.$2("light_punch",B.E8),$async$dq)
 case 6:g=a6
 s=7
-return A.m(n.$2("heavy_kick",B.EY),$async$dq)
+return A.m(n.$2("heavy_kick",B.EU),$async$dq)
 case 7:f=a6
 s=8
 return A.m(n.$2("block",B.ma),$async$dq)
@@ -72423,8 +72423,8 @@ B.EM=s([],t.n)
 B.mh=s([],t.t)
 B.mj=s([],t.ee)
 B.EH=s([],t.XS)
-B.EV=s([B.bP,B.cx,B.iv,B.f0,B.iw,B.dy,B.lH,B.ix,B.f1,B.iy,B.iu],A.ab("r<e7>"))
-B.EY=s([80,80,80,90,170,170],t.t)
+B.EU=s([60,60,60,60,90,100,120,120],t.t)
+B.EW=s([B.bP,B.cx,B.iv,B.f0,B.iw,B.dy,B.lH,B.ix,B.f1,B.iy,B.iu],A.ab("r<e7>"))
 B.dG=s([B.bI,B.bf,B.es,B.et,B.eu],t.QP)
 B.DP=s([0.001200833568784504,0.002389694492170889,0.0002795742885861124],t.n)
 B.ED=s([0.0005891086651375999,0.0029785502573438758,0.0003270666104008398],t.n)
@@ -73024,25 +73024,25 @@ B.DM=s([B.r3,null,null,B.iW],t.L)
 B.D9=s([B.r4,null,null,B.bZ],t.L)
 B.DY=s([B.r5,null,null,B.dT],t.L)
 B.ET=s([B.r6,null,null,B.c_],t.L)
-B.EU=s([B.r7,null,null,B.dU],t.L)
+B.EV=s([B.r7,null,null,B.dU],t.L)
 B.DQ=s([B.dP,B.dP,B.fp,null],t.L)
 B.F3=s([B.fk,null,B.fk,null],t.L)
 B.E9=s([B.ba,null,null,B.bX],t.L)
 B.Ea=s([B.aX,null,null,B.bY],t.L)
 B.Eb=s([B.aY,null,null,B.bZ],t.L)
 B.F7=s([B.bb,null,null,B.c_],t.L)
-B.EW=s([B.iP,null,null,B.iW],t.L)
+B.EX=s([B.iP,null,null,B.iW],t.L)
 B.DR=s([B.dN,B.dN,B.fn,null],t.L)
 B.EA=s([B.as,null,null,B.bW],t.L)
 B.Ec=s([B.bU,null,null,B.dR],t.L)
 B.DK=s([B.fj,null,null,B.iU],t.L)
 B.Ed=s([B.bV,null,null,B.dT],t.L)
-B.EX=s([B.dM,null,null,B.iV],t.L)
+B.EY=s([B.dM,null,null,B.iV],t.L)
 B.DS=s([B.dQ,B.dQ,B.fq,null],t.L)
 B.Ee=s([B.dK,null,null,B.dS],t.L)
 B.EE=s([B.dL,null,null,B.dU],t.L)
 B.DT=s([B.dO,B.dO,B.fo,null],t.L)
-B.GX=new A.cE(["*",B.DF,"+",B.ES,"-",B.E7,".",B.Eq,"/",B.D3,"0",B.F2,"1",B.F_,"2",B.DO,"3",B.F8,"4",B.EZ,"5",B.DM,"6",B.D9,"7",B.DY,"8",B.ET,"9",B.EU,"Alt",B.DQ,"AltGraph",B.F3,"ArrowDown",B.E9,"ArrowLeft",B.Ea,"ArrowRight",B.Eb,"ArrowUp",B.F7,"Clear",B.EW,"Control",B.DR,"Delete",B.EA,"End",B.Ec,"Enter",B.DK,"Home",B.Ed,"Insert",B.EX,"Meta",B.DS,"PageDown",B.Ee,"PageUp",B.EE,"Shift",B.DT],A.ab("cE<w,R<e?>>"))
+B.GX=new A.cE(["*",B.DF,"+",B.ES,"-",B.E7,".",B.Eq,"/",B.D3,"0",B.F2,"1",B.F_,"2",B.DO,"3",B.F8,"4",B.EZ,"5",B.DM,"6",B.D9,"7",B.DY,"8",B.ET,"9",B.EV,"Alt",B.DQ,"AltGraph",B.F3,"ArrowDown",B.E9,"ArrowLeft",B.Ea,"ArrowRight",B.Eb,"ArrowUp",B.F7,"Clear",B.EX,"Control",B.DR,"Delete",B.EA,"End",B.Ec,"Enter",B.DK,"Home",B.Ed,"Insert",B.EY,"Meta",B.DS,"PageDown",B.Ee,"PageUp",B.EE,"Shift",B.DT],A.ab("cE<w,R<e?>>"))
 B.Hq={KeyA:0,KeyB:1,KeyC:2,KeyD:3,KeyE:4,KeyF:5,KeyG:6,KeyH:7,KeyI:8,KeyJ:9,KeyK:10,KeyL:11,KeyM:12,KeyN:13,KeyO:14,KeyP:15,KeyQ:16,KeyR:17,KeyS:18,KeyT:19,KeyU:20,KeyV:21,KeyW:22,KeyX:23,KeyY:24,KeyZ:25,Digit1:26,Digit2:27,Digit3:28,Digit4:29,Digit5:30,Digit6:31,Digit7:32,Digit8:33,Digit9:34,Digit0:35,Minus:36,Equal:37,BracketLeft:38,BracketRight:39,Backslash:40,Semicolon:41,Quote:42,Backquote:43,Comma:44,Period:45,Slash:46}
 B.rk=new A.bq(B.Hq,["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","1","2","3","4","5","6","7","8","9","0","-","=","[","]","\\",";","'","`",",",".","/"],t.li)
 B.Hp={"zh-Hant":0,"zh-TW":1,"zh-MO":2,"zh-HK":3,ja:4,ko:5,zh:6,"zh-Hans":7,"zh-CN":8}
