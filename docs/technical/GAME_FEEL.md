@@ -29,15 +29,17 @@ Flame can hold a frame for a chosen time, per frame
 (`SpriteAnimationFrame(sprite, stepTime: …)`), so the cycles below are exact
 recipes derived from `MatchRules.standard` — no uniform `stepTime`.
 
-**light_punch — 5 frames, 350 ms total** (startup 90 / active 70 / recovery 190):
+**light_punch — 7 frames, 350 ms total** (startup 90 / active 70 / recovery 190):
 
 | Frame | Pose (art bible) | Holds for | Window |
 |---|---|---|---|
-| 000 | wind-up | 45 ms | startup |
-| 001 | extension | 45 ms | startup (hitbox opens at 90 ms) |
-| 002 | **contact** | **70 ms** | active — the hitbox is open exactly here |
-| 003 | recoil | 95 ms | recovery |
-| 004 | recovery | 95 ms | recovery → back to idle |
+| 000 | wind-up | 30 ms | startup |
+| 001 | launch (in-between) | 30 ms | startup |
+| 002 | extension | 30 ms | startup (hitbox opens at 90 ms) |
+| 003 | **contact** | **70 ms** | active — the hitbox is open exactly here |
+| 004 | recoil | 65 ms | recovery |
+| 005 | back toward guard (in-between) | 60 ms | recovery |
+| 006 | recovery | 65 ms | recovery → back to idle |
 
 **heavy_kick — 6 frames, 670 ms total** (startup 240 / active 90 / recovery 340):
 

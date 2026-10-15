@@ -72,13 +72,20 @@ slower than the other while the body moves at a constant speed.
 - `jump_003`: falling pose with legs preparing for landing.
 - `jump_004`: grounded landing with a small ink impact mark, feet back on baseline.
 
-### Light punch — 5 frames
+### Light punch — 7 frames (5 keyframes + 2 in-betweens)
 
 - `light_punch_000`: ready stance and clear shoulder wind-up, punching arm still bent.
-- `light_punch_001`: fist moving forward, elbow and face still visible.
-- `light_punch_002`: crisp full extension contact frame, readable fist and short ink motion trail.
-- `light_punch_003`: fist retracting, body returning from the impact.
-- `light_punch_004`: exact ready stance recovery, feet on baseline.
+- `light_punch_001` — **in-between (000 → 002)**: light punch in-between, launching the jab: the punching front glove halfway along its path from the cocked wind-up to the straight-arm extension, the elbow bent at a right angle and the glove level with the chin, only halfway to full reach and clearly shorter than the straight arm of the frame after; shoulder turning into the punch; the rear glove guarding the chest; feet planted exactly as in both neighbours.
+- `light_punch_002`: fist moving forward, elbow and face still visible.
+- `light_punch_003`: crisp full extension contact frame, readable fist and short ink motion trail.
+- `light_punch_004`: fist retracting, body returning from the impact.
+- `light_punch_005` — **in-between (004 → 006)**: light punch in-between, recovering: the punching glove pulled back the last stretch toward the raised guard beside the face, elbow tucking in, shoulders squaring back toward the ready stance (the rival's rear glove dropping halfway toward the hip); feet planted exactly as in both neighbours.
+- `light_punch_006`: exact ready stance recovery, feet on baseline.
+
+The contact pose is now frame 003, and the recipe in GAME_FEEL §1 keeps it on
+screen for exactly the 90–160 ms active window. A launch drawn at full
+extension was rejected: the longer arm widens the bounding box, so the body
+flickered 44 px backwards for one frame.
 
 ### Heavy kick — 6 frames
 
@@ -202,6 +209,7 @@ step / mean silhouette change, before → after):
 |---|---|---|
 | idle | 13 px / 0.11 → 13 px / 0.09 (seam only) | 43 px / 0.23 → 29 px / 0.18 |
 | walk | 8 px / 0.18 → 8 px / 0.15 | 40 px / 0.25 → 42 px / 0.22 |
+| light punch | 86 px / 0.28 → 52 px / 0.29 | 35 px / 0.25 → 42 px / 0.22 |
 
 Rejected, with the measurement: the player's idle 002 → 003 in-between, four
 attempts. Twice the scarf came out longer than in frame 003 (the largest head

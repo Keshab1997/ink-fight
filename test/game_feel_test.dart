@@ -106,8 +106,8 @@ void main() {
         isTrue,
         reason: 'elapsed ${state.actionElapsedMs} ms should be active',
       );
-      // Frame 002, the contact pose, is on screen while the hitbox is open.
-      expect(visibleFrame(player), 2);
+      // Frame 003, the contact pose, is on screen while the hitbox is open.
+      expect(visibleFrame(player), 3);
 
       // Four more updates close the window at 160 ms; the sprite has recoiled.
       tick(game, 4);
@@ -117,7 +117,7 @@ void main() {
         ),
         isFalse,
       );
-      expect(visibleFrame(player), greaterThan(2));
+      expect(visibleFrame(player), greaterThan(3));
     });
 
     test(
@@ -160,7 +160,7 @@ void main() {
 
         game.sendPlayerAction(InputAction.lightPunch);
         tick(game, 1);
-        expect(player.animation!.frames, hasLength(5)); // no idle bookends
+        expect(player.animation!.frames, hasLength(7)); // no idle bookends
         expect(totalMsOf(player), rules.lightAttack.totalMs.toDouble());
 
         pastCountdown(game); // let the punch finish into idle

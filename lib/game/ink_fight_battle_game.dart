@@ -22,10 +22,12 @@ import 'rules/match_rules.dart';
 // combat constants of its own; anything the rules can answer, the rules answer.
 // ---------------------------------------------------------------------------
 
-/// §1 light punch, per delivered frame: 45 + 45 + 70 + 95 + 95 = 350 ms =
-/// `lightAttack.totalMs`. Frame 002 (the contact pose) holds exactly the
-/// 90–160 ms active window.
-const List<int> _kLightPunchStepsMs = <int>[45, 45, 70, 95, 95];
+/// §1 light punch, per delivered frame: 30 + 30 + 30 + 70 + 65 + 60 + 65 =
+/// 350 ms = `lightAttack.totalMs`. Wind-up, the launch in-between and the
+/// extension share the 90 ms startup; frame 003 (the contact pose) holds
+/// exactly the 90–160 ms active window; recoil, the in-between back toward
+/// guard and the recovery share the 190 ms that is left.
+const List<int> _kLightPunchStepsMs = <int>[30, 30, 30, 70, 65, 60, 65];
 
 /// §1 heavy kick: 80 + 80 + 80 + 90 + 170 + 170 = 670 ms =
 /// `heavyAttack.totalMs`. Frame 003 (contact) holds the 240–330 ms window.
