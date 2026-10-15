@@ -8,6 +8,7 @@ import 'package:inkfight/screens/bot_fight_screen.dart';
 import 'package:inkfight/screens/difficulty_screen.dart';
 import 'package:inkfight/screens/home_screen.dart';
 import 'package:inkfight/screens/settings_screen.dart';
+import 'package:inkfight/state/ink_settings.dart';
 import 'package:inkfight/theme/app_theme.dart';
 
 /// Puts the app on a given route the way the browser does: the platform's
@@ -16,7 +17,7 @@ import 'package:inkfight/theme/app_theme.dart';
 Future<void> pumpDeepLink(WidgetTester tester, String route) async {
   tester.binding.platformDispatcher.defaultRouteNameTestValue = route;
   addTearDown(tester.binding.platformDispatcher.clearDefaultRouteNameTestValue);
-  await tester.pumpWidget(const InkFightApp());
+  await tester.pumpWidget(InkFightApp(settings: InkSettings()));
 }
 
 /// Mirrors [InkFightApp] but with a navigator observer, so a test can read the
@@ -27,7 +28,7 @@ Widget _appWithObserver(_RouteRecorder observer) {
     theme: InkFightTheme.light,
     navigatorObservers: [observer],
     // The table already maps '/' to the menu, so no `home:` (the two clash).
-    routes: InkRoutes.table,
+    routes: InkRoutes.table(InkSettings()),
   );
 }
 
@@ -42,7 +43,7 @@ class _RouteRecorder extends NavigatorObserver {
 
 void main() {
   testWidgets('shows the INK FIGHT landscape menu', (tester) async {
-    await tester.pumpWidget(const InkFightApp());
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
 
     expect(find.text('INK FIGHT'), findsOneWidget);
     expect(find.text('DOODLE COMBAT'), findsOneWidget);
@@ -52,7 +53,7 @@ void main() {
   });
 
   testWidgets('menu BOT FIGHT opens the difficulty picker', (tester) async {
-    await tester.pumpWidget(const InkFightApp());
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
 
     await tester.tap(find.text('BOT FIGHT'));
     await tester.pumpAndSettle();
@@ -66,7 +67,7 @@ void main() {
   });
 
   testWidgets('picking NORMAL opens the bot fight arena', (tester) async {
-    await tester.pumpWidget(const InkFightApp());
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
     await tester.tap(find.text('BOT FIGHT'));
     await tester.pumpAndSettle();
 
@@ -107,7 +108,7 @@ void main() {
   });
 
   testWidgets('back from the picker returns to the menu', (tester) async {
-    await tester.pumpWidget(const InkFightApp());
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
     await tester.tap(find.text('BOT FIGHT'));
     await tester.pumpAndSettle();
     expect(find.byType(DifficultyScreen), findsOneWidget);
@@ -120,7 +121,7 @@ void main() {
   });
 
   testWidgets('the READY badge also opens the picker', (tester) async {
-    await tester.pumpWidget(const InkFightApp());
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
 
     await tester.tap(find.text('BOT MODE READY'));
     await tester.pumpAndSettle();
@@ -144,7 +145,7 @@ void main() {
   });
 
   testWidgets('online mode explains that it is planned', (tester) async {
-    await tester.pumpWidget(const InkFightApp());
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
 
     await tester.tap(find.text('ONLINE 1V1'));
     await tester.pump();
@@ -158,7 +159,7 @@ void main() {
   testWidgets('the menu opens settings through the named route', (
     tester,
   ) async {
-    await tester.pumpWidget(const InkFightApp());
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
 
     await tester.tap(find.text('SETTINGS'));
     await tester.pumpAndSettle();
@@ -174,7 +175,7 @@ void main() {
   testWidgets('the sound switch flips without leaving the screen', (
     tester,
   ) async {
-    await tester.pumpWidget(const InkFightApp());
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
     await tester.tap(find.text('SETTINGS'));
     await tester.pumpAndSettle();
 
@@ -187,7 +188,7 @@ void main() {
   });
 
   testWidgets('back returns to the menu', (tester) async {
-    await tester.pumpWidget(const InkFightApp());
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
     await tester.tap(find.text('SETTINGS'));
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
@@ -225,6 +226,34 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
 
     expect(find.byType(BotFightScreen), findsOneWidget);
+  });
+
+  testWidgets('QUIT TO MENU from the pause overlay lands back on the menu', (
+    tester,
+  ) async {
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.tap(find.text('BOT FIGHT'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NORMAL'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.byType(BotFightScreen), findsOneWidget);
+
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.pump();
+    expect(find.text('PAUSED'), findsOneWidget);
+
+    await tester.tap(find.text('QUIT TO MENU'));
+    await tester.pumpAndSettle();
+
+    // The one whole-screen chain: the menu is back, the arena is gone, and
+    // the picker went with it.
+    expect(find.byType(BotFightScreen), findsNothing);
+    expect(find.byType(DifficultyScreen), findsNothing);
+    expect(find.text('DOODLE COMBAT'), findsOneWidget);
   });
 
   test('the route names are the URLs the web build has to serve', () {

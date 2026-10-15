@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'screens/app_routes.dart';
 import 'screens/home_screen.dart';
+import 'state/ink_settings.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -21,11 +22,15 @@ Future<void> main() async {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
-  runApp(const InkFightApp());
+  runApp(InkFightApp(settings: InkSettings()));
 }
 
 class InkFightApp extends StatelessWidget {
-  const InkFightApp({super.key});
+  const InkFightApp({super.key, required this.settings});
+
+  /// The app's one preference model, built in `main()` and handed to the
+  /// routes table — session-scoped by design (see [InkSettings]).
+  final InkSettings settings;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +43,7 @@ class InkFightApp extends StatelessWidget {
       // of its own, and that name is the whole web deep link: the preview at
       // `…/preview/main/#/settings` arrives as `/settings` and lands on the
       // settings screen without any router package.
-      routes: InkRoutes.table,
+      routes: InkRoutes.table(settings),
       onUnknownRoute: (_) =>
           MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
     );

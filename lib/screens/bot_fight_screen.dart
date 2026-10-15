@@ -19,13 +19,20 @@ class BotFightScreen extends StatefulWidget {
   State<BotFightScreen> createState() => _BotFightScreenState();
 }
 
-class _BotFightScreenState extends State<BotFightScreen> {
+class _BotFightScreenState extends State<BotFightScreen>
+    with WidgetsBindingObserver {
   late final InkFightBattleGame _game;
 
   /// The pause overlay is up, and the engine is stopped with it: the match,
   /// the bot and the ink all freeze together because `pauseEngine` stops the
   /// one loop that drives them.
   bool _paused = false;
+
+  /// True while a pause the *system* started — backgrounding, a call, the
+  /// app switcher — is waiting for the player's choice. On return the fight
+  /// does not silently resume: the overlay goes up over the stopped engine
+  /// and the player picks RESUME, RESTART or QUIT.
+  bool _pausedBySystem = false;
 
   /// The one-time controls card. It greets every fresh mount of this screen
   /// and stays away after GOT IT — a plain State field on purpose: no
@@ -38,12 +45,58 @@ class _BotFightScreenState extends State<BotFightScreen> {
     _game = InkFightBattleGame(
       botProfile: BotProfile.forDifficulty(widget.difficulty),
     );
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _game.pauseEngine();
     super.dispose();
+  }
+
+  /// The app's lifecycle, as the platform reports it. Losing focus already
+  /// freezes a live fight — an incoming call or the app switcher should not
+  /// let the round clock run down off-screen — and coming back hands the
+  /// choice to the player instead of resuming mid-combo.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _returnFromSystemPause();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        _pauseForSystem();
+      case AppLifecycleState.detached:
+        break; // dispose() stops the engine; there is nothing to choose here
+    }
+  }
+
+  void _pauseForSystem() {
+    // A decided match has nothing left to freeze, and its card must stay
+    // uncovered when the player comes back — so no flag, no overlay.
+    if (_game.roundEndCardVisible) {
+      return;
+    }
+    // A pause the player opened themselves already has the overlay up; the
+    // engine is already stopped and the flag must not hijack the return.
+    if (_paused) {
+      return;
+    }
+    _game.pauseEngine();
+    _pausedBySystem = true;
+  }
+
+  void _returnFromSystemPause() {
+    if (!_pausedBySystem) {
+      return;
+    }
+    _pausedBySystem = false;
+    // Show the overlay but keep the engine stopped: the round clock neither
+    // ran while away nor eats the gap now, and nothing moves until the
+    // player taps RESUME, RESTART or QUIT.
+    setState(() => _paused = true);
   }
 
   /// A decided match cannot be paused — the round-end card already owns
@@ -435,353 +488,4 @@ class _PauseOverlay extends StatelessWidget {
   });
 
   final VoidCallback onResume;
-  final VoidCallback onRestart;
-  final VoidCallback onQuit;
-  final VoidCallback onControls;
-
-  @override
-  Widget build(BuildContext context) {
-    return _InkDialog(
-      children: [
-        const Text(
-          'PAUSED',
-          style: TextStyle(
-            color: InkColors.ink,
-            fontSize: 19,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.4,
-          ),
-        ),
-        const SizedBox(height: 16),
-        _DialogButton(label: 'RESUME', onTap: onResume, primary: true),
-        const SizedBox(height: 10),
-        _DialogButton(label: 'RESTART', onTap: onRestart),
-        const SizedBox(height: 10),
-        _DialogButton(label: 'CONTROLS', onTap: onControls),
-        const SizedBox(height: 10),
-        _DialogButton(label: 'QUIT TO MENU', onTap: onQuit),
-      ],
-    );
-  }
-}
-
-/// The one-time greeting for the new controls: what the joystick does and
-/// what the four buttons are. The lines are single strings on purpose, so
-/// the card never doubles the arena's own PUNCH / KICK labels for finders.
-class _ControlsHelpCard extends StatelessWidget {
-  const _ControlsHelpCard({required this.onDismiss});
-
-  final VoidCallback onDismiss;
-
-  static const TextStyle _line = TextStyle(
-    color: InkColors.inkSoft,
-    fontSize: 11,
-    fontWeight: FontWeight.w700,
-    letterSpacing: .4,
-    height: 1.45,
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    return _InkDialog(
-      children: [
-        const Text(
-          'CONTROLS',
-          style: TextStyle(
-            color: InkColors.ink,
-            fontSize: 19,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.4,
-          ),
-        ),
-        const SizedBox(height: 14),
-        const Text(
-          'DRAG the joystick left / right to retreat and advance.',
-          style: _line,
-        ),
-        const SizedBox(height: 8),
-        const Text('PUSH the joystick up to jump.', style: _line),
-        const SizedBox(height: 8),
-        const Text(
-          'The four buttons are PUNCH / KICK / BLOCK / JUMP.',
-          style: _line,
-        ),
-        const SizedBox(height: 18),
-        _DialogButton(label: 'GOT IT', onTap: onDismiss, primary: true),
-      ],
-    );
-  }
-}
-
-class _HudHealth extends StatelessWidget {
-  const _HudHealth({required this.label, required this.value});
-
-  final String label;
-  final double value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
-      decoration: BoxDecoration(
-        color: InkColors.white.withValues(alpha: .78),
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: InkColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: InkColors.inkSoft,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.1,
-                ),
-              ),
-              Text(
-                '${(value * 100).round()}%',
-                style: const TextStyle(
-                  color: InkColors.muted,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              minHeight: 6,
-              value: value,
-              backgroundColor: InkColors.paperDeep,
-              color: InkColors.ink,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BattleControls extends StatelessWidget {
-  const _BattleControls({
-    required this.onPunch,
-    required this.onKick,
-    required this.onBlock,
-    required this.onJump,
-    required this.onMoveAxis,
-  });
-
-  final VoidCallback onPunch;
-  final VoidCallback onKick;
-  final VoidCallback onBlock;
-  final VoidCallback onJump;
-
-  /// The joystick's -1 … +1: back and forth along the arena line. Its upward
-  /// flick shares [onJump] with the button.
-  final ValueChanged<double> onMoveAxis;
-
-  /// The touch budget of one action button; never smaller than the old row.
-  static const double _actionWidth = 78;
-  static const double _gap = 8;
-
-  @override
-  Widget build(BuildContext context) {
-    final actions = <Widget>[
-      _ControlButton(
-        label: 'PUNCH',
-        icon: Icons.bolt_rounded,
-        onTap: onPunch,
-        primary: true,
-      ),
-      _ControlButton(
-        label: 'KICK',
-        icon: Icons.sports_martial_arts_rounded,
-        onTap: onKick,
-      ),
-      _ControlButton(
-        label: 'BLOCK',
-        icon: Icons.shield_outlined,
-        onTap: onBlock,
-      ),
-      _ControlButton(label: 'JUMP', icon: Icons.north_rounded, onTap: onJump),
-    ];
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // One row wants the joystick, a breathing gap and all four 78 dp
-        // buttons (~464 dp). A window too narrow for that — 360 dp wide —
-        // stacks the buttons into a 2×2 grid on the right instead: the
-        // targets never shrink, the row just folds.
-        final wantsRow =
-            constraints.maxWidth >=
-            VirtualJoystick.defaultSize + 24 + 4 * _actionWidth + 3 * _gap;
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _ArenaStatus(label: 'BOT FIGHT / PRACTICE'),
-                const SizedBox(height: _gap),
-                VirtualJoystick(onAxisChanged: onMoveAxis, onJump: onJump),
-              ],
-            ),
-            const Spacer(),
-            if (wantsRow)
-              for (var i = 0; i < actions.length; i++) ...[
-                if (i > 0) const SizedBox(width: _gap),
-                actions[i],
-              ]
-            else
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      actions[0],
-                      const SizedBox(width: _gap),
-                      actions[1],
-                    ],
-                  ),
-                  const SizedBox(height: _gap),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      actions[2],
-                      const SizedBox(width: _gap),
-                      actions[3],
-                    ],
-                  ),
-                ],
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _ControlButton extends StatelessWidget {
-  const _ControlButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.primary = false,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool primary;
-
-  @override
-  Widget build(BuildContext context) {
-    final background = primary ? InkColors.ink : InkColors.white;
-    final foreground = primary ? InkColors.white : InkColors.inkSoft;
-
-    return Material(
-      color: background,
-      borderRadius: BorderRadius.circular(15),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(15),
-        child: Container(
-          width: 78,
-          height: 58,
-          padding: const EdgeInsets.symmetric(horizontal: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: primary ? InkColors.ink : InkColors.line),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: foreground, size: 19),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  color: foreground,
-                  fontSize: 8,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .6,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RoundIconButton extends StatelessWidget {
-  const _RoundIconButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: InkColors.ink,
-        borderRadius: BorderRadius.circular(13),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(13),
-          child: SizedBox(
-            width: 42,
-            height: 42,
-            child: Icon(icon, color: InkColors.white),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ArenaStatus extends StatelessWidget {
-  const _ArenaStatus({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: InkColors.white.withValues(alpha: .78),
-        borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: InkColors.line),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: InkColors.inkSoft,
-            fontSize: 8,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1,
-          ),
-        ),
-      ),
-    );
-  }
-}
+  final VoidCallba

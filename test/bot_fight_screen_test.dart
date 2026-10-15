@@ -358,4 +358,141 @@ void main() {
     expect(find.text('PAUSED'), findsNothing);
     expect(game.paused, isFalse);
   });
+
+  testWidgets('backgrounding stops the fight — the return hands the player '
+      'the choice', (tester) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    // Into live combat, with some of the clock already spent.
+    for (var i = 0; i < 190 && game.match.phase != MatchPhase.fighting; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.match.phase, MatchPhase.fighting);
+    for (var i = 0; i < 60; i++) {
+      game.update(1 / 60);
+    }
+    final clock = game.match.timeRemainingMs;
+    expect(clock, lessThan(game.match.rules.roundMs));
+
+    // The player leaves the app mid-fight: nothing may keep running, and
+    // nothing may be decided off-screen.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(game.paused, isTrue, reason: 'the system pause stops the engine');
+    expect(
+      find.text('PAUSED'),
+      findsNothing,
+      reason: 'there is nothing to read off-screen',
+    );
+
+    // Away for a while: the round clock must not notice (catch-up clamps).
+    await tester.pump(const Duration(seconds: 5));
+    expect(game.match.timeRemainingMs, clock);
+
+    // Back in: the fight does not silently resume — the player chooses.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(game.paused, isTrue, reason: 'still stopped behind the overlay');
+    expect(find.text('PAUSED'), findsOneWidget);
+    expect(game.match.timeRemainingMs, clock);
+
+    // Frozen while the overlay is up; thawed only by the player's RESUME.
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(game.match.timeRemainingMs, clock);
+    await tester.tap(find.text('RESUME'));
+    await tester.pump();
+    expect(find.text('PAUSED'), findsNothing);
+    expect(game.paused, isFalse);
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(game.match.timeRemainingMs, lessThan(clock));
+  });
+
+  testWidgets('backgrounding under the round-end card leaves the card alone', (
+    tester,
+  ) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    // Play the same idle loss as the card test, cinema included.
+    for (var i = 0; i < 4200 && !game.match.isFinished; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.match.isFinished, isTrue);
+    await tester.pump();
+    var guard = 0;
+    while (!game.roundEndCardVisible && guard++ < 90) {
+      await tester.pump(const Duration(milliseconds: 17));
+    }
+    expect(game.roundEndCardVisible, isTrue);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
+    // The decided match has nothing left to freeze, and no overlay may cover
+    // the card that already owns REMATCH and the way out.
+    expect(find.text('PAUSED'), findsNothing);
+    expect(find.text('REMATCH'), findsOneWidget);
+    expect(
+      game.paused,
+      isFalse,
+      reason: 'the engine may idle again — there is nothing left to fight',
+    );
+  });
+
+  testWidgets('unmounting the arena cleans up and a remount starts fresh', (
+    tester,
+  ) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    // A dirty fight: countdown spent, clock run down, someone has been hit.
+    for (var i = 0; i < 430; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.match.timeRemainingMs, lessThan(game.match.rules.roundMs));
+
+    // Leave the way QUIT TO MENU does: the screen unmounts, stops the engine
+    // and takes its lifecycle observer off the binding's list.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(find.byType(BotFightScreen), findsNothing);
+    expect(game.paused, isTrue, reason: 'leaving the screen stops the engine');
+
+    // A later lifecycle edge must not reach the dead screen: no crash, and no
+    // overlay anywhere afterwards.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(find.text('PAUSED'), findsNothing);
+
+    // Coming back builds a whole new game: no round card, no cinema, no stuck
+    // pause, full health and a full clock.
+    final rematch = await mountFight(tester);
+    expect(rematch, isNot(same(game)));
+    expect(rematch.paused, isFalse);
+    expect(rematch.match.phase, MatchPhase.countdown);
+    expect(rematch.match.timeRemainingMs, rematch.match.rules.roundMs);
+    expect(
+      rematch.match.stateOf(FighterId.player).health,
+      rematch.match.rules.health,
+    );
+    expect(
+      rematch.match.stateOf(FighterId.rival).health,
+      rematch.match.rules.health,
+    );
+    expect(rematch.roundEndCardVisible, isFalse);
+    expect(find.text('PAUSED'), findsNothing);
+    expect(
+      find.text('GOT IT'),
+      findsOneWidget,
+      reason: 'a fresh mount greets again and inherits nothing',
+    );
+  });
 }

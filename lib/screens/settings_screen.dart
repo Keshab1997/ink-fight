@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../state/ink_settings.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ink_back_button.dart';
 
@@ -9,19 +10,17 @@ import '../widgets/ink_back_button.dart';
 /// The screen is reachable two ways — the home menu's SETTINGS button and the
 /// web deep link `#/settings` — and both land on this one route, so the back
 /// button has somewhere to return to either way.
-class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+///
+/// [settings] is the app's one preference model, handed in by the routes
+/// table: the SOUND row reads and writes it directly, so what the switch
+/// shows is what the model says — even after leaving and coming back. Nothing
+/// local lives here: no preference setState, no placeholder field. HAPTICS
+/// stays the static `SOON` row this round; the arena's `hapticsEnabled` flag
+/// is what that row will be wired to, and it does not exist yet.
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key, required this.settings});
 
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  /// Placeholder state, on purpose: the switch works for the session it is
-  /// flipped in and forgets on restart. Nothing in the app plays a sound yet,
-  /// so a switch that claims to save a preference would be dressing up a lie;
-  /// persistence arrives with the local store the design document asks for.
-  bool _soundOn = true;
+  final InkSettings settings;
 
   @override
   Widget build(BuildContext context) {
@@ -44,12 +43,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: 'AUDIO / HAPTICS',
                         child: Column(
                           children: [
-                            _ToggleRow(
-                              label: 'SOUND',
-                              caption: 'HIT CUES AND UI TAPS',
-                              value: _soundOn,
-                              onChanged: (value) =>
-                                  setState(() => _soundOn = value),
+                            ListenableBuilder(
+                              listenable: settings,
+                              builder: (context, _) => _ToggleRow(
+                                label: 'SOUND',
+                                caption: 'HIT CUES AND UI TAPS',
+                                value: settings.soundOn,
+                                onChanged: (value) => settings.soundOn = value,
+                              ),
                             ),
                             const SizedBox(height: 10),
                             // The design document asks for audio and haptics to

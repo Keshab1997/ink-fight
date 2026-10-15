@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../state/ink_settings.dart';
 import 'bot_fight_screen.dart';
 import 'difficulty_screen.dart';
 import 'home_screen.dart';
@@ -20,10 +21,15 @@ abstract final class InkRoutes {
   static const settings = '/settings';
 
   /// The navigator's table, exactly what `MaterialApp.routes` wants.
-  static Map<String, WidgetBuilder> get table => <String, WidgetBuilder>{
-    home: (_) => const HomeScreen(),
-    difficulty: (_) => const DifficultyScreen(),
-    botFight: (_) => const BotFightScreen(),
-    settings: (_) => const SettingsScreen(),
-  };
+  ///
+  /// [settings] is the app's one preference model: the table closes over it,
+  /// so every route — deep links included — builds screens that read and
+  /// write the same instance.
+  static Map<String, WidgetBuilder> table(InkSettings settings) =>
+      <String, WidgetBuilder>{
+        home: (_) => const HomeScreen(),
+        difficulty: (_) => const DifficultyScreen(),
+        botFight: (_) => const BotFightScreen(),
+        settings: (_) => SettingsScreen(settings: settings),
+      };
 }
