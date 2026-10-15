@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -7,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/effects/arena_atmosphere.dart';
 import 'package:inkfight/game/effects/arena_footwork.dart';
+import 'package:inkfight/game/effects/arena_ink_gravity.dart';
 import 'package:inkfight/game/effects/arena_physical_paint.dart';
 import 'package:inkfight/game/effects/arena_room.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
@@ -980,6 +982,9 @@ void main() {
       }
       expect(fx.scarCount, 2);
       fx.update(120);
+      // The scar snapshot ages both view clocks, just like the game: transient
+      // travelling ink must have finished before measuring persistent floor ink.
+      observe(fx, sprite, player, dt: 120);
       final bytes = await pixels(
         (c) => fx.renderFloor(c, _viewport, _floor, _height),
       );
@@ -1148,4 +1153,374 @@ void main() {
     pulled.reset();
     expect(pulled.dustPositions, initial);
   });
+
+  group('ink that obeys gravity', () {
+    const player = FighterState(
+      id: FighterId.player,
+      x: 110,
+      health: 100,
+      facing: 1,
+    );
+    const rival = FighterState(
+      id: FighterId.rival,
+      x: 190,
+      health: 100,
+      facing: -1,
+    );
+
+    ArenaInkGravity gravity() =>
+        ArenaInkGravity()..layout(_viewport.width, _height);
+
+    void advance(ArenaAtmosphere fx, double dt, {FighterState p = player}) {
+      fx.advanceRoom(
+        realDt: dt,
+        effectDt: dt,
+        roundEnd: false,
+        player: p,
+        rival: rival,
+        rules: MatchRules.standard,
+      );
+    }
+
+    test('only confirmed heavy/knockdown events launch; cap 12; mirrored away from the blow', () {
+      final fx = gravity();
+      fx.onHit(hit(), 300);
+      fx.onHit(hit(heavy: true, kind: HitKind.whiff), 300);
+      fx.onHit(hit(heavy: true, kind: HitKind.blocked), 300);
+      expect(fx.dropletCount, 0);
+      fx.onHit(hit(heavy: true), 300);
+      expect(fx.dropletCount, 3);
+      fx.advance(.1, .1, (_) => fail('not at the floor yet'));
+      expect(fx.droplets.every((d) => d.dx > 0), isTrue);
+      fx.reset();
+      fx.observeFacing(player.copyWith(facing: -1), rival);
+      fx.onHit(hit(heavy: true), 300);
+      fx.advance(.1, .1, (_) => fail('not at the floor yet'));
+      expect(fx.droplets.every((d) => d.dx < 0), isTrue);
+      fx.reset();
+      const knockdown = HitEvent(
+        attacker: FighterId.player,
+        defender: FighterId.rival,
+        kind: HitKind.hit,
+        heavy: true,
+        x: 150,
+        ko: false,
+        knockdown: true,
+      );
+      fx.onHit(knockdown, 300);
+      expect(fx.dropletCount, 4);
+      for (var i = 0; i < 100; i++) {
+        fx.onHit(knockdown, 300);
+      }
+      expect(fx.dropletCount, 12);
+      fx.reset();
+      expect(fx.dropletCount, 0);
+    });
+
+    test('droplets rise then accelerate down; exact landing, independent of frame partition', () {
+      final coarse = gravity(), fine = gravity();
+      coarse.onHit(hit(heavy: true), 300);
+      fine.onHit(hit(heavy: true), 300);
+      final start = coarse.droplets;
+      coarse.advance(.05, .05, (_) => fail('premature landing'));
+      expect(coarse.droplets.first.y, lessThan(start.first.y));
+      coarse.advance(.25, .25, (_) => fail('premature landing'));
+      fine.advance(.1, .1, (_) => fail('premature landing'));
+      fine.advance(.2, .2, (_) => fail('premature landing'));
+      for (var i = 0; i < 3; i++) {
+        expect(coarse.droplets[i].dx, closeTo(fine.droplets[i].dx, 1e-12));
+        expect(coarse.droplets[i].y, closeTo(fine.droplets[i].y, 1e-12));
+      }
+      final a = <InkLanding>[], b = <InkLanding>[];
+      coarse.advance(.5, .5, a.add);
+      for (var i = 0; i < 50; i++) {
+        fine.advance(.01, .01, b.add);
+      }
+      expect(a, hasLength(3));
+      expect(b, hasLength(3));
+      for (var i = 0; i < a.length; i++) {
+        expect(a[i].xShare, closeTo(b[i].xShare, 1e-12));
+        expect(a[i].radiusShare, b[i].radiusShare);
+        expect(a[i].xShare, greaterThan(.5));
+      }
+      final t = (.20 + math.sqrt(.20 * .20 + 2 * 2.8 * .43)) / 2.8;
+      expect(
+        a.any((p) => (p.xShare - (.5 + .10 * t * _height / 960)).abs() < 1e-12),
+        isTrue,
+      );
+      expect(coarse.dropletCount, 0);
+      coarse.advance(
+        10,
+        10,
+        (_) => fail('a dead droplet must never land twice'),
+      );
+      coarse.reset();
+      coarse.onHit(hit(heavy: true), 300);
+      coarse.advance(.3, .3, (_) => fail('premature landing'));
+      for (var i = 0; i < 3; i++) {
+        expect(
+          coarse.droplets[i].y,
+          closeTo(
+            -.43 + [-.20, -.24, -.18][i] * .3 + .5 * 2.8 * .3 * .3,
+            1e-12,
+          ),
+        );
+      }
+    });
+
+    test(
+      'effect clock scales arcs in KO and freezes them, without a second clock',
+      () {
+        final normal = gravity(), slow = gravity();
+        normal.onHit(hit(heavy: true), 300);
+        slow.onHit(hit(heavy: true), 300);
+        normal.advance(.2, .2, (_) {});
+        slow.advance(.05, .2, (_) {});
+        for (var i = 0; i < 3; i++) {
+          expect(
+            slow.droplets[i].dx,
+            closeTo(normal.droplets[i].dx * .25, 1e-12),
+          );
+        }
+        final held = slow.droplets;
+        slow.advance(0, .25, (_) => fail('frozen'));
+        expect(slow.droplets, held);
+      },
+    );
+
+    test(
+      'every droplet landing joins the EXISTING 24-mark pool and fades there',
+      () async {
+        final fx = atmosphere();
+        await pixels(
+          (c) => fx.renderFloor(c, _viewport, _floor, _height),
+        ); // establish view geometry
+        fx.onHit(hit(heavy: true), 300);
+        final immediate = fx.markCount;
+        expect(fx.dropletCount, 3);
+        advance(fx, .8);
+        expect(fx.dropletCount, 0);
+        expect(fx.markCount, immediate + 3);
+        expect(
+          fx.markOpacities.skip(immediate).every((a) => a > 0 && a <= .36),
+          isTrue,
+        );
+        fx.update(1.6);
+        expect(
+          fx.markCount,
+          immediate,
+          reason: 'only existing normal hit residue remains',
+        );
+        for (var i = 0; i < 30; i++) {
+          fx.onHit(hit(heavy: true), 300);
+        }
+        advance(fx, .8);
+        expect(fx.markCount, lessThanOrEqualTo(24));
+        fx.reset();
+        expect(fx.markCount, 0);
+        expect(fx.dropletCount, 0);
+        expect(fx.wallRunCount, 0);
+      },
+    );
+
+    test('wall splatter rises, runs down under gravity, settles at .10h, fades and caps', () {
+      final fx = gravity();
+      final wall = player.copyWith(
+        x: MatchRules.standard.minX,
+        pushVelocity: -40,
+      );
+      fx.onWall(wall, 300);
+      expect(fx.wallRunCount, 2);
+      fx.advance(.1, .1, (_) => fail('a wall run is not a flying droplet'));
+      expect(fx.wallDisplacements.every((y) => y < 0), isTrue);
+      fx.advance(.6, .6, (_) => fail('wall paint does not mint floor dots'));
+      expect(fx.wallDisplacements.every((y) => y > 0 && y <= .1), isTrue);
+      fx.advance(.2, .2, (_) {});
+      expect(fx.wallDisplacements, [.1, .1]);
+      fx.advance(.6, .6, (_) {});
+      expect(fx.wallRunCount, 2);
+      fx.advance(.11, .11, (_) {});
+      expect(fx.wallRunCount, 0);
+      for (var i = 0; i < 100; i++) {
+        fx.onWall(wall, 300);
+      }
+      expect(fx.wallRunCount, 8);
+      fx.reset();
+      expect(fx.wallRunCount, 0);
+    });
+
+    test('only the existing boundary-shove gate emits wall runs, never walking/holding', () async {
+      final fx = atmosphere();
+      await pixels((c) => fx.renderFloor(c, _viewport, _floor, _height));
+      advance(fx, .016);
+      final wall = player.copyWith(x: MatchRules.standard.minX);
+      advance(fx, .016, p: wall);
+      expect(fx.wallRunCount, 0);
+      final shoved = wall.copyWith(
+        action: FighterAction.hitstun,
+        pushVelocity: -40,
+      );
+      advance(fx, .016, p: shoved);
+      expect(fx.wallRunCount, 2);
+      expect(fx.markCount, 1);
+      for (var i = 0; i < 10; i++) {
+        advance(fx, .016, p: shoved);
+      }
+      expect(fx.wallRunCount, 2);
+      expect(fx.markCount, 1);
+      fx.reset();
+      advance(fx, .016, p: shoved);
+      expect(fx.wallRunCount, 0);
+    });
+
+    test('rendered trajectories stay in narrow contact-to-floor corridor, wall run within .15h', () async {
+      final fx = gravity();
+      fx.onHit(hit(heavy: true), 300);
+      for (final dt in [.01, .09, .2, .2]) {
+        fx.advance(dt, dt, (_) => fail('not at the floor'));
+        final before = fx.droplets;
+        final data = await pixels(
+          (c) => fx.render(c, _viewport, _floor, _height),
+        );
+        expect(
+          fx.droplets,
+          before,
+          reason: 'render must never advance a particle',
+        );
+        var drawn = 0;
+        for (var y = 0; y < 540; y++) {
+          for (var x = 0; x < 960; x++) {
+            final p = (y * 960 + x) * 4;
+            if (data[p + 3] == 0) continue;
+            drawn++;
+            expect((x - 480).abs(), lessThan(_height * .15));
+            expect(y, greaterThan((_floor - _height * .46).floor()));
+            expect(y, lessThanOrEqualTo(_floor + _height * .008));
+            expect(data[p], data[p + 1]);
+            expect(data[p + 1], data[p + 2]);
+          }
+        }
+        expect(drawn, greaterThan(0));
+      }
+      fx.reset();
+      fx.onWall(player.copyWith(x: 150, pushVelocity: -40), 300);
+      fx.advance(.7, .7, (_) {});
+      final wall = await pixels(
+        (c) => fx.render(c, _viewport, _floor, _height),
+      );
+      for (var y = 0; y < 540; y++) {
+        for (var x = 0; x < 960; x++) {
+          if (wall[(y * 960 + x) * 4 + 3] == 0) continue;
+          expect((x - 480).abs(), lessThan(_height * .15));
+          expect((y - (_floor - _height * .43)).abs(), lessThan(_height * .15));
+        }
+      }
+    });
+
+    test('actual heavy hit renders travelling ink and lands it without render-side sim writes', () async {
+      const passive = BotProfile(
+        difficulty: BotDifficulty.easy,
+        thinkIntervalMs: 60000,
+        reactionMs: 60000,
+        attackCooldownMs: 60000,
+        blockChance: 0,
+        heavyChance: 0,
+        hesitationChance: 1,
+        recoveryMs: 0,
+        preferredGap: 90,
+      );
+      final game = InkFightBattleGame(botProfile: passive)
+        ..hapticsEnabled = false;
+      game.onGameResize(Vector2(960, 540));
+      await game.onLoad();
+      await game.ready();
+      for (var i = 0; i < 130; i++) {
+        game.update(1 / 60);
+      }
+      game.setPlayerMoving(true);
+      for (var i = 0; i < 55; i++) {
+        game.update(1 / 60);
+      }
+      game.setPlayerMoving(false);
+      game.sendPlayerAction(InputAction.heavyKick);
+      var hit = false;
+      for (var i = 0; i < 60; i++) {
+        game.update(1 / 60);
+        if (game.match.rival.health < 100) {
+          hit = true;
+          break;
+        }
+      }
+      expect(hit, isTrue);
+      Directory('.agent-screens').createSync(recursive: true);
+      Future<void> capture(String name) async {
+        final p = game.match.player, r = game.match.rival;
+        final clock = game.match.timeRemainingMs;
+        final image = await raster(game.render);
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        File('.agent-screens/$name.png')
+            .writeAsBytesSync(bytes!.buffer.asUint8List());
+        image.dispose();
+        expect(game.match.player, same(p));
+        expect(game.match.rival, same(r));
+        expect(game.match.timeRemainingMs, clock);
+      }
+
+      for (var i = 0; i < 7; i++) {
+        game.update(1 / 60);
+      }
+      await capture('ink-gravity-rise');
+      for (var i = 0; i < 20; i++) {
+        game.update(1 / 60);
+      }
+      await capture('ink-gravity-fall');
+      for (var i = 0; i < 15; i++) {
+        game.update(1 / 60);
+      }
+      await capture('ink-gravity-landed');
+    });
+  });
+
+  test(
+    'landing residue order and fade are invariant to frame partitioning',
+    () async {
+      final coarse = atmosphere(), fine = atmosphere();
+      const p = FighterState(
+        id: FighterId.player,
+        x: 110,
+        health: 100,
+        facing: 1,
+      );
+      const r = FighterState(
+        id: FighterId.rival,
+        x: 190,
+        health: 100,
+        facing: -1,
+      );
+      for (final fx in [coarse, fine]) {
+        await pixels((c) => fx.renderFloor(c, _viewport, _floor, _height));
+        fx.onHit(hit(heavy: true), 300);
+      }
+      void step(ArenaAtmosphere fx, double dt) {
+        fx.update(dt);
+        fx.advanceRoom(
+          realDt: dt,
+          effectDt: dt,
+          roundEnd: false,
+          player: p,
+          rival: r,
+          rules: MatchRules.standard,
+        );
+      }
+
+      step(coarse, .8);
+      for (var i = 0; i < 80; i++) {
+        step(fine, .01);
+      }
+      expect(coarse.markCount, fine.markCount);
+      for (var i = 0; i < coarse.markCount; i++) {
+        expect(coarse.markOpacities[i], closeTo(fine.markOpacities[i], 1e-10));
+      }
+    },
+  );
 }

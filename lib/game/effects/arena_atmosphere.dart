@@ -9,6 +9,7 @@ import '../rules/match_controller.dart';
 import '../rules/match_rules.dart';
 import 'arena_physical_paint.dart';
 import 'arena_footwork.dart';
+import 'arena_ink_gravity.dart';
 import 'arena_room.dart';
 
 /// Paint only: the paper remembers connects, never guesses them from a pose.
@@ -32,6 +33,7 @@ class ArenaAtmosphere {
   // Recorded once, not randomised in render or update. Unit coordinates keep
   // the same fibres pinned to the page even when the viewport is resized.
   ui.Picture? _grain;
+  final ArenaInkGravity _gravity = ArenaInkGravity();
   final ArenaFootwork _footwork = ArenaFootwork();
   final List<_FloorDot> _footDots = [];
   final List<_FloorDot> _scars = [];
@@ -90,6 +92,7 @@ class ArenaAtmosphere {
     _physical.onHit(event, arenaWidth);
     _room.onHit(event, arenaWidth: arenaWidth);
     _footwork.onHit(event);
+    _gravity.onHit(event, arenaWidth);
     if (event.kind == HitKind.whiff) {
       return;
     }
@@ -156,6 +159,10 @@ class ArenaAtmosphere {
     double viewportWidth = 0,
     double movementDt = 0,
   }) {
+    final height = playerSprite?.size.y ?? rivalSprite?.size.y ?? 0;
+    if (viewportWidth > 0 && height > 0) _gravity.layout(viewportWidth, height);
+    _gravity.observeFacing(player, rival);
+    _gravity.advance(effectDt, realDt, _leaveInkLanding);
     _room.advanceAir(realDt: realDt, effectDt: effectDt, roundEnd: roundEnd);
     void plant(FootPlant plant) {
       if (plant.scar) {
@@ -192,6 +199,7 @@ class ArenaAtmosphere {
     _footwork.observe(player, playerSprite, viewportWidth, movementDt, plant);
     _footwork.observe(rival, rivalSprite, viewportWidth, movementDt, plant);
     _room.observeWalls(player, rival, rules, (fighter) {
+      _gravity.onWall(fighter, rules.arenaWidth);
       if (_dots.length == maxMarks) _dots.removeAt(0);
       _dots.add(
         _FloorDot(
@@ -206,6 +214,26 @@ class ArenaAtmosphere {
         )..retiring = true,
       );
     });
+  }
+
+  /// All landed droplets join the SAME 24-mark pool as hits/wall scuffs.
+  /// No private landing cache, no second renderer or reset/expiry mechanism.
+  void _leaveInkLanding(InkLanding landing) {
+    if (landing.alreadyAgedMs >= 1500) return;
+    if (_dots.length == maxMarks) _dots.removeAt(0);
+    _dots.add(
+      _FloorDot(
+          xShare: landing.xShare,
+          dxShare: 0,
+          dyShare: 0,
+          radiusShare: landing.radiusShare,
+          colour: _ink,
+          opacity: .36,
+          fadeLifeMs: 1500,
+        )
+        ..retiring = true
+        ..fadeMs = landing.alreadyAgedMs,
+    );
   }
 
   void applyRoomResponse(ui.Canvas canvas, double fighterHeight) =>
@@ -238,6 +266,7 @@ class ArenaAtmosphere {
     double fighterHeight,
   ) {
     _physical.layout(viewport, floorY, fighterHeight);
+    _gravity.layout(viewport.width, fighterHeight);
     if (fighterHeight <= 0 || viewport.isEmpty) {
       return;
     }
@@ -266,6 +295,7 @@ class ArenaAtmosphere {
           ),
       );
     }
+    _gravity.render(canvas, viewport, floorY, fighterHeight);
     canvas.restore();
   }
 
@@ -392,6 +422,7 @@ class ArenaAtmosphere {
 
   void reset() {
     _physical.reset();
+    _gravity.reset();
     _room.reset();
     _footwork.reset();
     _footDots.clear();
@@ -404,6 +435,12 @@ class ArenaAtmosphere {
   bool isFlashing(FighterId id) => _isFlashing(id);
 
   bool _isFlashing(FighterId id) => (_flash[id] ?? 0) > 0;
+
+  @visibleForTesting
+  int get dropletCount => _gravity.dropletCount;
+
+  @visibleForTesting
+  int get wallRunCount => _gravity.wallRunCount;
 
   @visibleForTesting
   int get footScuffCount => _footDots.length;
