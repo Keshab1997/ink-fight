@@ -4,6 +4,7 @@ import 'dart:math';
 // `flame_audio` re-exports the preloaded AudioPlayer API.
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 /// Every sound the fight can make, one per row of the cue table in
 /// `docs/technical/GAME_FEEL.md` §4.
@@ -79,17 +80,18 @@ class FightSoundVariation {
   final double rate;
   final double volume;
 
+  static bool varies(FightCue cue) => switch (cue) {
+    FightCue.hitLight ||
+    FightCue.hitHeavy ||
+    FightCue.blocked ||
+    FightCue.whooshLight ||
+    FightCue.whooshHeavy ||
+    FightCue.stepTap => true,
+    _ => false,
+  };
+
   static FightSoundVariation sample(FightCue cue, Random random) {
-    final varies = switch (cue) {
-      FightCue.hitLight ||
-      FightCue.hitHeavy ||
-      FightCue.blocked ||
-      FightCue.whooshLight ||
-      FightCue.whooshHeavy ||
-      FightCue.stepTap => true,
-      _ => false,
-    };
-    if (!varies) {
+    if (!varies(cue)) {
       return const FightSoundVariation(1, .8);
     }
     return FightSoundVariation(
@@ -101,8 +103,10 @@ class FightSoundVariation {
 
 /// Preloaded, bounded voices per cue: source loading happens only in
 /// [warmUp], never on a hit frame. AudioPool.start exposes volume but not
-/// playback rate; owning the voices lets us set both before resume without
-/// mutating another overlapping hit. Tests can still use SilentFightSounds.
+/// playback rate. Worse, media players often preserve pitch when changing
+/// speed. Pre-resampling five tiny PCM variants in warmUp gives real pitch
+/// variation on every platform, with no decoding or source changes on a hit.
+/// Each voice owns its source, so overlapping hits cannot alter each other.
 class FlameFightSounds implements FightSounds {
   const FlameFightSounds();
 
@@ -113,8 +117,8 @@ class FlameFightSounds implements FightSounds {
   static final Random _random = Random();
   static Future<void>? _warming;
 
-  /// How many copies of a cue may overlap. A stride tap, an impact and its
-  /// whoosh can share a frame; the sparse cues never need more than a pair.
+  /// Fixed-pitch cues need only a pair. Physical cues get five independent
+  /// preloaded pitch bins; a stride, impact and whoosh can share a frame.
   static int _voicesOf(FightCue cue) => switch (cue) {
     FightCue.stepTap => 4,
     FightCue.hitLight || FightCue.whooshLight => 3,
@@ -161,6 +165,7 @@ class FlameFightSounds implements FightSounds {
         _pools[cue] = await _FightVoicePool.create(
           _fileOf(cue),
           _voicesOf(cue),
+          varies: FightSoundVariation.varies(cue),
         );
       } catch (error) {
         if (kDebugMode) {
@@ -198,15 +203,34 @@ class _FightVoicePool {
   _FightVoicePool(this.voices);
   final List<_FightVoice> voices;
 
-  static Future<_FightVoicePool> create(String file, int count) async {
+  static Future<_FightVoicePool> create(
+    String file,
+    int count, {
+    required bool varies,
+  }) async {
     final voices = <_FightVoice>[];
+    final rates = varies
+        ? const [.96, .98, 1.0, 1.02, 1.04]
+        : List<double>.filled(count, 1);
+    final data = varies ? await rootBundle.load('assets/audio/$file') : null;
+    final wav = data?.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
     try {
-      for (var i = 0; i < count; i++) {
+      for (final rate in rates) {
         final player = AudioPlayer()..audioCache = FlameAudio.audioCache;
-        final voice = _FightVoice(player);
+        final voice = _FightVoice(player, rate);
         voices.add(voice);
         await player.setReleaseMode(ReleaseMode.stop);
-        await player.setSource(AssetSource(file));
+        await player.setSource(
+          wav == null
+              ? AssetSource(file)
+              : BytesSource(
+                  pitchShiftFightWav(wav, rate),
+                  mimeType: 'audio/wav',
+                ),
+        );
       }
       return _FightVoicePool(voices);
     } catch (_) {
@@ -216,34 +240,34 @@ class _FightVoicePool {
   }
 
   Future<void> start(FightSoundVariation variation) async {
+    _FightVoice? chosen;
     for (final voice in voices) {
-      if (!voice.busy) {
-        voice.busy = true;
-        await voice.start(variation);
-        return;
+      if (!voice.busy &&
+          (chosen == null ||
+              (voice.rate - variation.rate).abs() <
+                  (chosen.rate - variation.rate).abs())) {
+        chosen = voice;
       }
+    }
+    if (chosen != null) {
+      chosen.busy = true;
+      await chosen.start(variation);
     }
   }
 }
 
 class _FightVoice {
-  _FightVoice(this.player) {
-    _completion = player.onPlayerComplete.listen((_) => busy = false);
+  _FightVoice(this.player, this.rate) {
+    _completion = player.onPlayerComplete.listen((_) => unawaited(_finish()));
   }
 
   final AudioPlayer player;
+  final double rate;
   late final StreamSubscription<void> _completion;
   bool busy = false;
 
   Future<void> start(FightSoundVariation variation) async {
     try {
-      // Playback rate changes pitch and duration slightly. Some platforms
-      // do not support it: still play the contact with its gain variation.
-      try {
-        await player.setPlaybackRate(variation.rate);
-      } catch (_) {
-        // An unsupported pitch control must never mute the whole cue.
-      }
       await player.setVolume(variation.volume);
       await player.resume();
     } catch (_) {
@@ -252,8 +276,61 @@ class _FightVoice {
     }
   }
 
+  Future<void> _finish() async {
+    try {
+      // Rewind without releasing the source, then return the warm voice.
+      await player.stop();
+    } catch (_) {
+      // Audio failure is never a game failure.
+    } finally {
+      busy = false;
+    }
+  }
+
   Future<void> dispose() async {
     await _completion.cancel();
     await player.dispose();
   }
+}
+
+/// Resample our generator's canonical 44-byte-header mono PCM WAV, keeping
+/// 22050 Hz / 16-bit format. Shortening the waveform raises actual pitch;
+/// no player time-stretch setting can silently preserve it. Warm-up only.
+@visibleForTesting
+Uint8List pitchShiftFightWav(Uint8List wav, double rate) {
+  final input = ByteData.sublistView(wav);
+  if (wav.length < 46 ||
+      rate <= 0 ||
+      !rate.isFinite ||
+      input.getUint32(0, Endian.little) != 0x46464952 ||
+      input.getUint32(8, Endian.little) != 0x45564157 ||
+      input.getUint32(12, Endian.little) != 0x20746d66 ||
+      input.getUint32(16, Endian.little) != 16 ||
+      input.getUint16(20, Endian.little) != 1 ||
+      input.getUint16(22, Endian.little) != 1 ||
+      input.getUint32(24, Endian.little) != 22050 ||
+      input.getUint16(34, Endian.little) != 16 ||
+      input.getUint32(36, Endian.little) != 0x61746164 ||
+      input.getUint32(40, Endian.little) != wav.length - 44) {
+    throw const FormatException('Expected generated mono 22050 Hz PCM WAV');
+  }
+  if (rate == 1) {
+    return wav;
+  }
+  final sourceFrames = (wav.length - 44) ~/ 2;
+  final frames = (sourceFrames / rate).floor();
+  final bytes = Uint8List(44 + frames * 2)..setRange(0, 44, wav);
+  final output = ByteData.sublistView(bytes);
+  output.setUint32(4, bytes.length - 8, Endian.little);
+  output.setUint32(40, frames * 2, Endian.little);
+  for (var i = 0; i < frames; i++) {
+    final position = (i * rate).clamp(0, sourceFrames - 1).toDouble();
+    final left = position.floor();
+    final right = min(left + 1, sourceFrames - 1);
+    final a = input.getInt16(44 + left * 2, Endian.little);
+    final b = input.getInt16(44 + right * 2, Endian.little);
+    final sample = (a + (b - a) * (position - left)).round();
+    output.setInt16(44 + i * 2, sample, Endian.little);
+  }
+  return bytes;
 }

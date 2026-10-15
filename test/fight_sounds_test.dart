@@ -1,9 +1,55 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:inkfight/game/audio/fight_sounds.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('pitch variants change actual PCM pitch, not just a playback setting', () async {
+    final asset = await rootBundle.load('assets/audio/whoosh_light.wav');
+    final original = asset.buffer.asUint8List(
+      asset.offsetInBytes,
+      asset.lengthInBytes,
+    );
+    final originalFrames = (original.length - 44) ~/ 2;
+    for (final rate in [.96, .98, 1.0, 1.02, 1.04]) {
+      final variant = pitchShiftFightWav(original, rate);
+      final pcm = ByteData.sublistView(variant);
+      expect((variant.length - 44) ~/ 2, (originalFrames / rate).floor());
+      expect(pcm.getUint32(4, Endian.little), variant.length - 8);
+      expect(pcm.getUint32(40, Endian.little), variant.length - 44);
+      expect(pcm.getUint16(22, Endian.little), 1);
+      expect(pcm.getUint32(24, Endian.little), 22050);
+      expect(pcm.getUint16(34, Endian.little), 16);
+      expect(variant.length, lessThan(60000));
+      if (rate == 1) {
+        expect(variant, orderedEquals(original));
+      } else {
+        // Output sample at n reads input at n*rate: faster oscillations for
+        // >1, slower for <1. Verify real waveform resampling, not just header.
+        const index = 1000;
+        final position = index * rate;
+        final left = position.floor();
+        final source = ByteData.sublistView(original);
+        final a = source.getInt16(44 + left * 2, Endian.little);
+        final b = source.getInt16(44 + (left + 1) * 2, Endian.little);
+        expect(
+          pcm.getInt16(44 + index * 2, Endian.little),
+          (a + (b - a) * (position - left)).round(),
+        );
+      }
+    }
+  });
+
+  test('pitch preparation rejects unexpected audio formats', () {
+    expect(
+      () => pitchShiftFightWav(Uint8List(20), 1.04),
+      throwsFormatException,
+    );
+  });
   const physical = [
     FightCue.hitLight,
     FightCue.hitHeavy,
