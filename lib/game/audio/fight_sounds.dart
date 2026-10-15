@@ -38,6 +38,9 @@ enum FightCue {
 
   /// FIGHT! and the result stamping in: the short sting.
   roundSting,
+
+  /// Restrained final-ten-seconds tick; counting blips replace it at 3/2/1.
+  clockTick,
 }
 
 /// The seam between the fight and whatever makes noise.
@@ -71,7 +74,7 @@ class SilentFightSounds implements FightSounds {
 }
 
 /// Small per-play changes for physical contacts, swings and footfalls.
-/// Musical cues stay fixed. The .8 base volume leaves room for +10% gain
+/// Musical and clock cues stay fixed. The .8 base volume leaves room for +10% gain
 /// without clipping at the player's volume ceiling.
 @visibleForTesting
 class FightSoundVariation {
@@ -92,7 +95,7 @@ class FightSoundVariation {
 
   static FightSoundVariation sample(FightCue cue, Random random) {
     if (!varies(cue)) {
-      return const FightSoundVariation(1, .8);
+      return FightSoundVariation(1, cue == FightCue.clockTick ? .5 : .8);
     }
     return FightSoundVariation(
       1 + (random.nextDouble() * 2 - 1) * .04,
@@ -137,6 +140,7 @@ class FlameFightSounds implements FightSounds {
     FightCue.koGong => 'ko_gong.wav',
     FightCue.countdownBlip => 'countdown_blip.wav',
     FightCue.roundSting => 'round_sting.wav',
+    FightCue.clockTick => 'clock_tick.wav',
   };
 
   @override

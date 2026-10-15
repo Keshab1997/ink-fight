@@ -81,16 +81,36 @@ void main() {
     });
   }
 
-  test('gong, counting and sting keep their tuning and gain', () {
+  test('musical/clock cues keep their tuning, clock stays softer', () {
     final random = Random(0);
     for (final cue in FightCue.values.where((cue) => !physical.contains(cue))) {
       for (var i = 0; i < 20; i++) {
         final play = FightSoundVariation.sample(cue, random);
         expect(play.rate, 1);
-        expect(play.volume, .8);
+        expect(play.volume, cue == FightCue.clockTick ? .5 : .8);
       }
     }
   });
+
+  test(
+    'clock tick is short mono PCM with a quieter peak than impacts',
+    () async {
+      final data = await rootBundle.load('assets/audio/clock_tick.wav');
+      final wav = ByteData.sublistView(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      );
+      expect(wav.getUint16(22, Endian.little), 1);
+      expect(wav.getUint32(24, Endian.little), 22050);
+      expect(wav.getUint16(34, Endian.little), 16);
+      expect(data.lengthInBytes, lessThan(60000));
+      expect((data.lengthInBytes - 44) / 2 / 22050, closeTo(.065, .001));
+      var peak = 0;
+      for (var i = 44; i < data.lengthInBytes; i += 2) {
+        peak = max(peak, wav.getInt16(i, Endian.little).abs());
+      }
+      expect(peak / 32767, inInclusiveRange(.28, .33));
+    },
+  );
 
   test('seeded variation is reproducible without changing cue API', () {
     final first = Random(42);

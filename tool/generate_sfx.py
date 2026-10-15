@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate INK FIGHT's designed sound effects.
 
-The cue list is exactly the one docs/technical/GAME_FEEL.md §4 specifies, so
-each file here has a line in the design document behind it:
+The base cues follow docs/technical/GAME_FEEL.md §4; the clock tick adds
+restrained feedback for the final ten seconds:
 
     light hit       ~80 ms  tick
     heavy hit      ~200 ms  thud + ink splat tail
@@ -11,6 +11,7 @@ each file here has a line in the design document behind it:
     jump / land             soft tap
     KO                      gong, then silence
     countdown / result      blip x3, then a short sting
+    final ten seconds       soft wooden clock tick
 
 Everything is synthesised from scratch here (noise, sine partials, envelopes)
 so the repository carries no third-party audio and needs no licence review.
@@ -254,6 +255,15 @@ def round_sting() -> list[float]:
     return mix(gain(first, 1.0), gain(second, 0.9), gain(fifth, 0.3))
 
 
+def clock_tick() -> list[float]:
+    # Quiet, rounded wood, distinct from both a landed hit and the urgent
+    # final-three blip. Normalization is deliberately quieter than impacts.
+    body = mul(tone(65, 720, 580), decay(_frames(65), 10))
+    tap = mul(bandpass(noise_frames_count(65, 73), 450, 1800),
+              decay(_frames(65), 6))
+    return mix(gain(body, 0.8), gain(tap, 0.4))
+
+
 CUES = {
     "hit_light.wav": light_hit,
     "hit_heavy.wav": heavy_hit,
@@ -264,12 +274,13 @@ CUES = {
     "ko_gong.wav": ko_gong,
     "countdown_blip.wav": countdown_blip,
     "round_sting.wav": round_sting,
+    "clock_tick.wav": clock_tick,
 }
 
 
 def main() -> int:
     for name, build in CUES.items():
-        write(name, build())
+        write(name, build(), peak=0.32 if name == "clock_tick.wav" else PEAK)
     return 0
 
 
