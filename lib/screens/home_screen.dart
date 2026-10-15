@@ -139,39 +139,48 @@ class _HeroCopy extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _Eyebrow(label: '01 / TRAINING GROUNDS'),
-          SizedBox(height: compact ? 10 : 16),
-          Text(
-            'DRAW.\nFIGHT.\nDOMINATE.',
-            style: TextStyle(
-              color: InkColors.ink,
-              fontSize: compact ? 31 : 42,
-              height: .89,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -2.4,
+      // The copy is a fixed composition — a three-line title, a two-line
+      // subtitle, a badge — and on a short landscape window the column is
+      // simply taller than the slot it sits in. Scaling it down keeps the
+      // whole composition readable instead of clipping the badge off the
+      // bottom, and at every size where it fits nothing is scaled at all.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _Eyebrow(label: '01 / TRAINING GROUNDS'),
+            SizedBox(height: compact ? 10 : 16),
+            Text(
+              'DRAW.\nFIGHT.\nDOMINATE.',
+              style: TextStyle(
+                color: InkColors.ink,
+                fontSize: compact ? 31 : 42,
+                height: .89,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -2.4,
+              ),
             ),
-          ),
-          SizedBox(height: compact ? 10 : 14),
-          Text(
-            'A clean line. A sharp hit.\nOwn the page.',
-            style: TextStyle(
-              color: InkColors.muted,
-              fontSize: compact ? 12 : 14,
-              height: 1.35,
-              fontWeight: FontWeight.w600,
+            SizedBox(height: compact ? 10 : 14),
+            Text(
+              'A clean line. A sharp hit.\nOwn the page.',
+              style: TextStyle(
+                color: InkColors.muted,
+                fontSize: compact ? 12 : 14,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          SizedBox(height: compact ? 14 : 20),
-          InkWell(
-            onTap: () => _showIntro(context),
-            borderRadius: BorderRadius.circular(99),
-            child: const _ReadyBadge(),
-          ),
-        ],
+            SizedBox(height: compact ? 14 : 20),
+            InkWell(
+              onTap: () => _showIntro(context),
+              borderRadius: BorderRadius.circular(99),
+              child: const _ReadyBadge(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -183,7 +192,7 @@ class _ArenaPreview extends StatelessWidget {
   /// Vignette: this preview is a posed picture, not a live match, so both
   /// health lines stand full. The bar is the table's own full health over
   /// itself, so a tuning change cannot leave the menu showing a stale bar.
-  static const int _vignetteFull = MatchRules.standard.health;
+  static final int _vignetteFull = MatchRules.standard.health;
 
   /// The clock chip, read from the table: a round is 60 seconds, so the chip
   /// says `01 : 00` because the rules say so, not because the string is real.
@@ -220,7 +229,7 @@ class _ArenaPreview extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Image.asset(
                       'assets/ui/home_player_kick.png',
                       fit: BoxFit.contain,
@@ -234,7 +243,7 @@ class _ArenaPreview extends StatelessWidget {
                     // untouched, and the arena keeps its regenerated frames.
                     child: Transform.flip(
                       flipX: true,
-                      child: const Image.asset(
+                      child: Image.asset(
                         'assets/ui/home_rival_punch.png',
                         fit: BoxFit.contain,
                         alignment: Alignment.bottomCenter,
@@ -251,7 +260,7 @@ class _ArenaPreview extends StatelessWidget {
             bottom: 14,
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: _HealthLine(
                     label: 'YOU',
                     value: _vignetteFull / MatchRules.standard.health,
@@ -276,7 +285,7 @@ class _ArenaPreview extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: _HealthLine(
                     label: 'CRIMSON RIVAL',
                     value: _vignetteFull / MatchRules.standard.health,

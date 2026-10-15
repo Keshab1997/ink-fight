@@ -92,6 +92,10 @@ void main() {
   });
 
   testWidgets('the menu does not overflow at 360x640', (tester) async {
+    // devicePixelRatio matters: without it the view keeps the test default of
+    // 3, and "360x640 physical" becomes a 120x213 logical screen that no
+    // layout is meant to survive. Pin it so the numbers below are logical.
+    tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(360, 640);
     addTearDown(tester.view.reset);
 
@@ -105,6 +109,7 @@ void main() {
   testWidgets('the menu does not overflow at small landscape 640x360', (
     tester,
   ) async {
+    tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(640, 360);
     addTearDown(tester.view.reset);
 
@@ -118,6 +123,7 @@ void main() {
   testWidgets('the menu does not overflow at wide landscape 1600x720', (
     tester,
   ) async {
+    tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1600, 720);
     addTearDown(tester.view.reset);
 
