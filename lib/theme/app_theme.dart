@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/ink_page_transitions.dart';
+
 abstract final class InkColors {
   static const ink = Color(0xFF101010);
   static const inkSoft = Color(0xFF282828);
@@ -20,6 +22,19 @@ abstract final class InkFightTheme {
 
     return ThemeData(
       useMaterial3: true,
+      // Every screen arrives on the same ink wipe, whatever the platform —
+      // the sketchbook has one way of turning a leaf. Reduced motion still
+      // gets the plain fade (see InkPageTransitionsBuilder).
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: InkPageTransitionsBuilder(),
+          TargetPlatform.iOS: InkPageTransitionsBuilder(),
+          TargetPlatform.macOS: InkPageTransitionsBuilder(),
+          TargetPlatform.windows: InkPageTransitionsBuilder(),
+          TargetPlatform.linux: InkPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: InkPageTransitionsBuilder(),
+        },
+      ),
       colorScheme: scheme.copyWith(
         primary: InkColors.ink,
         onPrimary: InkColors.white,
