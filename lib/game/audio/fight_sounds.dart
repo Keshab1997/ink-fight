@@ -44,6 +44,9 @@ enum FightCue {
 
   /// A two-or-more-hit streak unravelling; soft, falling low-mid air.
   comboUnravel,
+
+  /// A quiet low body pulse in otherwise quiet, critical-health combat.
+  lowHealthPulse,
 }
 
 /// The seam between the fight and whatever makes noise.
@@ -64,9 +67,75 @@ abstract interface class FightSounds {
   Future<void> warmUp();
 }
 
+/// Optional cancellation keeps existing FightSounds fakes/source users intact.
+/// Real tension playback supports immediate stop; no audio timer owns its life.
+abstract interface class CancellableFightSounds implements FightSounds {
+  void stop(FightCue cue);
+}
+
+extension FightSoundsCancellation on FightSounds {
+  void stopCue(FightCue cue) {
+    final sounds = this;
+    if (sounds is CancellableFightSounds) sounds.stop(cue);
+  }
+}
+
+/// Screen-owned pulse pacing on simulation time, not wall time. No catch-up,
+/// no pulses on paused clocks, and fresh quiet time after mute/busy/recovery.
+class LowHealthTensionCues {
+  int? _round;
+  int? _previousClock;
+  int? _quietSince;
+  int? _lastPulse;
+
+  void interrupt() {
+    _quietSince = null;
+    _lastPulse = null;
+  }
+
+  bool update({
+    required int roundNumber,
+    required int remainingMs,
+    required bool eligible,
+    required bool busy,
+  }) {
+    if (_round != roundNumber ||
+        (_previousClock != null && remainingMs > _previousClock!)) {
+      interrupt();
+    }
+    _round = roundNumber;
+    _previousClock = remainingMs;
+    if (!eligible || busy) {
+      interrupt();
+      return false;
+    }
+    _quietSince ??= remainingMs;
+    if (_quietSince! - remainingMs < 600 ||
+        (_lastPulse != null && _lastPulse! - remainingMs < 1800)) {
+      return false;
+    }
+    _lastPulse = remainingMs;
+    return true;
+  }
+}
+
+/// Last-line mixer priority: every foreground cue can interrupt a pulse, and
+/// the following quiet guard drops tension requests instead of queueing them.
+@visibleForTesting
+class FightCuePriority {
+  int? _foregroundMs;
+  bool allow(FightCue cue, int nowMs) {
+    if (cue != FightCue.lowHealthPulse) {
+      _foregroundMs = nowMs;
+      return true;
+    }
+    return _foregroundMs == null || nowMs - _foregroundMs! >= 600;
+  }
+}
+
 /// The default: no sound at all. Every test and the debug path get this
 /// unless they hand in something else.
-class SilentFightSounds implements FightSounds {
+class SilentFightSounds implements CancellableFightSounds {
   const SilentFightSounds();
 
   @override
@@ -74,6 +143,9 @@ class SilentFightSounds implements FightSounds {
 
   @override
   Future<void> warmUp() async {}
+
+  @override
+  void stop(FightCue cue) {}
 }
 
 /// Small per-play changes for physical contacts, swings and footfalls.
@@ -116,10 +188,11 @@ class FightSoundVariation {
     int combo = 0,
   }) {
     if (!varies(cue)) {
-      return FightSoundVariation(
-        1,
-        cue == FightCue.clockTick || cue == FightCue.comboUnravel ? .5 : .8,
-      );
+      return FightSoundVariation(1, switch (cue) {
+        FightCue.lowHealthPulse => .35,
+        FightCue.clockTick || FightCue.comboUnravel => .5,
+        _ => .8,
+      });
     }
     return FightSoundVariation(
       1 + comboLift(cue, combo) + (random.nextDouble() * 2 - 1) * .04,
@@ -134,7 +207,7 @@ class FightSoundVariation {
 /// speed. Pre-resampling small PCM pitch banks in warmUp gives real pitch
 /// variation on every platform, with no decoding or source changes on a hit.
 /// Each voice owns its source, so overlapping hits cannot alter each other.
-class FlameFightSounds implements FightSounds {
+class FlameFightSounds implements CancellableFightSounds {
   const FlameFightSounds({this.hitCombo});
 
   /// Read synchronously at play time, after stats.onHit, not on a later HUD
@@ -146,6 +219,8 @@ class FlameFightSounds implements FightSounds {
   /// reintroduce the very hitch the pools exist to remove.
   static final Map<FightCue, _FightVoicePool> _pools = {};
   static final Random _random = Random();
+  static final Stopwatch _cueClock = Stopwatch()..start();
+  static final FightCuePriority _priority = FightCuePriority();
   static Future<void>? _warming;
 
   /// Fixed-pitch cues need only a pair. Physical cues use independent warm
@@ -170,10 +245,13 @@ class FlameFightSounds implements FightSounds {
     FightCue.roundSting => 'round_sting.wav',
     FightCue.clockTick => 'clock_tick.wav',
     FightCue.comboUnravel => 'combo_unravel.wav',
+    FightCue.lowHealthPulse => 'low_health_pulse.wav',
   };
 
   @override
   void play(FightCue cue) {
+    if (!_priority.allow(cue, _cueClock.elapsedMilliseconds)) return;
+    if (cue != FightCue.lowHealthPulse) stop(FightCue.lowHealthPulse);
     final pool = _pools[cue];
     // Nothing to play through yet — a cue that beat the warm-up, or a
     // platform with no audio at all. Staying silent beats throwing into the
@@ -192,6 +270,11 @@ class FlameFightSounds implements FightSounds {
         ),
       ),
     );
+  }
+
+  @override
+  void stop(FightCue cue) {
+    _pools[cue]?.cancel();
   }
 
   @override
@@ -278,6 +361,12 @@ class _FightVoicePool {
     }
   }
 
+  void cancel() {
+    for (final voice in voices) {
+      if (voice.busy) voice.cancel();
+    }
+  }
+
   Future<void> start(FightSoundVariation variation) async {
     _FightVoice? chosen;
     for (final voice in voices) {
@@ -304,11 +393,22 @@ class _FightVoice {
   final double rate;
   late final StreamSubscription<void> _completion;
   bool busy = false;
+  int _generation = 0;
+
+  void cancel() {
+    _generation++;
+    unawaited(_finish());
+  }
 
   Future<void> start(FightSoundVariation variation) async {
+    final generation = ++_generation;
     try {
       await player.setVolume(variation.volume);
+      // Cancellation can arrive during prepare or native resume. Never let
+      // an in-flight async start resurrect a muted/recovered pulse.
+      if (generation != _generation) return;
       await player.resume();
+      if (generation != _generation) await player.stop();
     } catch (_) {
       busy = false;
       rethrow;

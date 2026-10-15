@@ -110,11 +110,13 @@ class _BotFightScreenState extends State<BotFightScreen>
     _ticker.dispose();
     _frame.dispose();
     _roundResult.dispose();
+    _stopTension();
     _game.pauseEngine();
     super.dispose();
   }
 
   void _onStatsChanged() {
+    _stopTension();
     final version = _game.stats.comboBreakVersion;
     if (version == _lastComboBreak) return;
     _lastComboBreak = version;
@@ -135,6 +137,46 @@ class _BotFightScreenState extends State<BotFightScreen>
 
   bool _wasFightBeat = false;
   final MatchClockCues _clockCues = MatchClockCues();
+  final LowHealthTensionCues _tensionCues = LowHealthTensionCues();
+  bool _tensionPlaying = false;
+
+  void _stopTension() {
+    _tensionCues.interrupt();
+    if (!_tensionPlaying) return;
+    _tensionPlaying = false;
+    _game.sounds.stopCue(FightCue.lowHealthPulse);
+  }
+
+  void _updateTension() {
+    final match = _game.match;
+    bool critical(int health) =>
+        health > 0 && health < match.rules.health * .25;
+    final eligible =
+        _game.soundEnabled &&
+        !_game.paused &&
+        !_showControlsHelp &&
+        !_paused &&
+        !_pausedBySystem &&
+        match.phase == MatchPhase.fighting &&
+        match.timeRemainingMs > 10000 &&
+        (critical(match.player.health) || critical(match.rival.health));
+    final busy =
+        _game.stats.combo >= 2 ||
+        !match.player.canAct ||
+        !match.rival.canAct ||
+        match.player.isAttacking ||
+        match.rival.isAttacking;
+    if (!eligible || busy) _stopTension();
+    if (_tensionCues.update(
+      roundNumber: match.roundNumber,
+      remainingMs: match.timeRemainingMs,
+      eligible: eligible,
+      busy: busy,
+    )) {
+      _tensionPlaying = true;
+      _game.sounds.play(FightCue.lowHealthPulse);
+    }
+  }
 
   void _onTick(Duration elapsed) {
     _frame.value = elapsed;
@@ -162,6 +204,7 @@ class _BotFightScreenState extends State<BotFightScreen>
       if (clockCue != null && _game.soundEnabled) {
         _game.sounds.play(clockCue);
       }
+      _updateTension();
     });
   }
 
@@ -174,6 +217,7 @@ class _BotFightScreenState extends State<BotFightScreen>
   void _applyPreferences() {
     _game.hapticsEnabled = widget.settings.hapticsOn;
     _game.soundEnabled = widget.settings.soundOn;
+    if (!_game.soundEnabled) _stopTension();
   }
 
   /// The app's lifecycle, as the platform reports it. Losing focus already
@@ -205,6 +249,7 @@ class _BotFightScreenState extends State<BotFightScreen>
     if (_paused) {
       return;
     }
+    _stopTension();
     _game.pauseEngine();
     _pausedBySystem = true;
   }
@@ -226,6 +271,7 @@ class _BotFightScreenState extends State<BotFightScreen>
     if (_paused || _game.roundEndCardVisible) {
       return;
     }
+    _stopTension();
     _game.pauseEngine();
     setState(() => _paused = true);
   }

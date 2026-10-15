@@ -13,6 +13,7 @@ restrained feedback for the final ten seconds:
     countdown / result      blip x3, then a short sting
     final ten seconds       soft wooden clock tick
     combo break             soft falling unravel
+    critical health         restrained low body pulse
 
 Everything is synthesised from scratch here (noise, sine partials, envelopes)
 so the repository carries no third-party audio and needs no licence review.
@@ -277,6 +278,15 @@ def combo_unravel() -> list[float]:
     return mix(gain(body, 0.7), gain(breath, 0.8), gain(air, 0.12))
 
 
+def low_health_pulse() -> list[float]:
+    # Body first, not an alarm: low fundamental with one soft phone-speaker
+    # harmonic, rounded attack, no click, shimmer or high-frequency warning.
+    n = 180
+    body = mul(tone(n, 150, 130), decay(_frames(n), 45, attack_ms=6))
+    harmonic = mul(tone(n, 300, 260), decay(_frames(n), 28, attack_ms=4))
+    return mix(gain(body, 1.0), gain(harmonic, 0.3))
+
+
 CUES = {
     "hit_light.wav": light_hit,
     "hit_heavy.wav": heavy_hit,
@@ -289,12 +299,15 @@ CUES = {
     "round_sting.wav": round_sting,
     "clock_tick.wav": clock_tick,
     "combo_unravel.wav": combo_unravel,
+    "low_health_pulse.wav": low_health_pulse,
 }
 
 
 def main() -> int:
     for name, build in CUES.items():
-        write(name, build(), peak=0.32 if name in ("clock_tick.wav", "combo_unravel.wav") else PEAK)
+        peak = (0.22 if name == "low_health_pulse.wav" else
+                0.32 if name in ("clock_tick.wav", "combo_unravel.wav") else PEAK)
+        write(name, build(), peak=peak)
     return 0
 
 

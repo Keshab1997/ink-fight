@@ -16,11 +16,22 @@ import 'package:inkfight/state/ink_settings.dart';
 import 'package:inkfight/theme/app_theme.dart';
 import 'package:inkfight/widgets/virtual_joystick.dart';
 
-class _RecordingFightSounds implements FightSounds {
+class _RecordingFightSounds implements CancellableFightSounds {
   final List<FightCue> cues = [];
+  final List<FightCue> stopped = [];
+  bool tensionActive = false;
 
   @override
-  void play(FightCue cue) => cues.add(cue);
+  void play(FightCue cue) {
+    cues.add(cue);
+    if (cue == FightCue.lowHealthPulse) tensionActive = true;
+  }
+
+  @override
+  void stop(FightCue cue) {
+    stopped.add(cue);
+    if (cue == FightCue.lowHealthPulse) tensionActive = false;
+  }
 
   @override
   Future<void> warmUp() async {}
@@ -400,7 +411,11 @@ void main() {
 
   // A round-boundary driver, unlike hurtTo's single-round health threshold.
   // Rules decide the winner; this helper only sends real combat inputs.
-  void knockoutRound(InkFightBattleGame game, FighterId winner) {
+  void knockoutRound(
+    InkFightBattleGame game,
+    FighterId winner, {
+    int sequenceBase = 0,
+  }) {
     final match = game.match;
     while (match.phase == MatchPhase.countdown) {
       match.tick(.016);
@@ -418,7 +433,7 @@ void main() {
           InputCommand(
             fighter: winner,
             action: InputAction.lightPunch,
-            sequence: guard,
+            sequence: sequenceBase + guard,
           ),
         );
       }
@@ -1550,6 +1565,182 @@ void main() {
     expect(match.stateOf(victim).health, lessThan(threshold));
     game.update(.000001);
   }
+
+  Future<(InkFightBattleGame, InkSettings, _RecordingFightSounds)>
+  criticalFight(
+    WidgetTester tester,
+    FighterId victim, {
+    MatchRules rules = const MatchRules(roundsToWin: 1),
+  }) async {
+    final settings = InkSettings();
+    final sounds = _RecordingFightSounds();
+    final game = await mountFight(
+      tester,
+      settings: settings,
+      sounds: sounds,
+      rules: rules,
+    );
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    pastCountdown(game);
+    game.pauseEngine();
+    hurtTo(game, victim, 25);
+    // Clear the attack/hitstun and the streak: tension belongs in a quiet
+    // gap, not under an impact, escalation or combo-break breath.
+    for (var i = 0; i < 40; i++) {
+      game.match.tick(.016);
+    }
+    game.stats.finishRound();
+    game.update(.12); // finish the impact freeze before the quiet-window test
+    game.update(.000001); // sync rules-driven health/clock before any rebuild
+    sounds.cues.clear();
+    sounds.stopped.clear();
+    game.resumeEngine();
+    await tester.pump(const Duration(milliseconds: 1));
+    return (game, settings, sounds);
+  }
+
+  Future<void> quietAdvance(
+    WidgetTester tester,
+    InkFightBattleGame game,
+  ) async {
+    // Advance sim time without the bot, then sample on a real positive frame.
+    for (var i = 0; i < 40; i++) {
+      game.match.tick(.016);
+    }
+    game.update(.000001);
+    await tester.pump(const Duration(milliseconds: 1));
+  }
+
+  for (final victim in FighterId.values) {
+    testWidgets(
+      'critical $victim pulse mutes immediately and never catches up',
+      (tester) async {
+        final (game, settings, sounds) = await criticalFight(tester, victim);
+        expect(sounds.cues, isNot(contains(FightCue.lowHealthPulse)));
+        await quietAdvance(tester, game);
+        expect(
+          sounds.cues.where((c) => c == FightCue.lowHealthPulse),
+          hasLength(1),
+        );
+        expect(sounds.tensionActive, isTrue);
+        settings.soundOn = false;
+        expect(
+          sounds.tensionActive,
+          isFalse,
+          reason: 'cancel on setting change, not on next pulse',
+        );
+        expect(sounds.stopped, contains(FightCue.lowHealthPulse));
+        await quietAdvance(tester, game);
+        settings.soundOn = true;
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(
+          sounds.cues.where((c) => c == FightCue.lowHealthPulse),
+          hasLength(1),
+        );
+        await quietAdvance(tester, game);
+        expect(
+          sounds.cues.where((c) => c == FightCue.lowHealthPulse),
+          hasLength(2),
+        );
+        if (victim == FighterId.player) {
+          game.restartMatch();
+          expect(
+            sounds.tensionActive,
+            isFalse,
+            reason: 'health restored: cancel during stats reset',
+          );
+          await tester.pump(const Duration(milliseconds: 1));
+          expect(game.match.player.health, game.match.rules.health);
+        } else {
+          await tester.tap(find.byIcon(Icons.pause_rounded));
+          expect(
+            sounds.tensionActive,
+            isFalse,
+            reason: 'pause cancels the pulse too',
+          );
+          await tester.pump();
+          await tester.tap(find.text('RESUME'));
+          await tester.pump(const Duration(milliseconds: 1));
+          await quietAdvance(tester, game);
+          expect(sounds.tensionActive, isTrue);
+          await tester.pumpWidget(const SizedBox.shrink());
+          expect(
+            sounds.tensionActive,
+            isFalse,
+            reason: 'unmount cancels without a timer tail',
+          );
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'automatic round recovery stops tension and preserves the round recap',
+    (tester) async {
+      final (game, _, sounds) = await criticalFight(
+        tester,
+        FighterId.rival,
+        rules: MatchRules.standard,
+      );
+      await quietAdvance(tester, game);
+      expect(sounds.tensionActive, isTrue);
+      knockoutRound(game, FighterId.player, sequenceBase: 20000);
+      expect(game.match.roundNumber, 2);
+      expect(game.match.rival.health, game.match.rules.health);
+      expect(
+        sounds.tensionActive,
+        isFalse,
+        reason: 'stop on restoration, not a later pulse interval',
+      );
+      expect(game.stats.hitsLanded, 0);
+      expect(game.stats.history, hasLength(1));
+      expect(game.stats.history.single.outcome, MatchOutcome.playerWin);
+      expect(
+        game.stats.history.single.hitsLanded,
+        (game.match.rules.health / game.match.rules.lightAttack.damage).ceil(),
+      );
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
+      expect(find.text('ROUND 1 WON'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'critical-health pulse yields to combo cues and final-ten clock',
+    (tester) async {
+      final (game, _, sounds) = await criticalFight(tester, FighterId.rival);
+      for (var i = 0; i < 2; i++) {
+        game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+      }
+      await quietAdvance(tester, game);
+      await quietAdvance(tester, game);
+      expect(
+        sounds.cues,
+        isNot(contains(FightCue.lowHealthPulse)),
+        reason: 'no tension under an active combo',
+      );
+      game.stats.finishRound();
+      expect(sounds.cues, contains(FightCue.comboUnravel));
+      await tester.pump(const Duration(milliseconds: 1));
+      await quietAdvance(tester, game);
+      expect(sounds.cues, contains(FightCue.lowHealthPulse));
+      clockTo(game, 10000);
+      game.update(.000001);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(sounds.tensionActive, isFalse);
+      final pulses = sounds.cues
+          .where((c) => c == FightCue.lowHealthPulse)
+          .length;
+      await quietAdvance(tester, game);
+      expect(
+        sounds.cues.where((c) => c == FightCue.lowHealthPulse),
+        hasLength(pulses),
+      );
+      expect(sounds.cues, contains(FightCue.clockTick));
+    },
+  );
 
   Future<List<int>> dripAlpha(WidgetTester tester, String label) async {
     final paint = tester.widget<CustomPaint>(

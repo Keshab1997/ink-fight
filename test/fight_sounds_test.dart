@@ -8,6 +8,123 @@ import 'package:inkfight/game/audio/fight_sounds.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('tension is sparse, sim-clock paced and never catches up', () {
+    final tension = LowHealthTensionCues();
+    bool sample(int clock) => tension.update(
+      roundNumber: 1,
+      remainingMs: clock,
+      eligible: true,
+      busy: false,
+    );
+    expect(sample(60000), isFalse);
+    expect(sample(59401), isFalse);
+    expect(sample(59400), isTrue);
+    expect(sample(59400), isFalse, reason: 'paused sim clock never pulses');
+    expect(sample(58000), isFalse);
+    expect(sample(57600), isTrue);
+    expect(
+      sample(30000),
+      isTrue,
+      reason: 'a missed interval yields one pulse only',
+    );
+    expect(sample(30000), isFalse);
+  });
+
+  test('tension rearms only after fresh quiet time on mute, busy, recovery or round reset', () {
+    final tension = LowHealthTensionCues();
+    bool sample(
+      int clock, {
+      bool eligible = true,
+      bool busy = false,
+      int round = 1,
+    }) => tension.update(
+      roundNumber: round,
+      remainingMs: clock,
+      eligible: eligible,
+      busy: busy,
+    );
+    expect(sample(60000), isFalse);
+    expect(sample(59400), isTrue);
+    expect(sample(59000, eligible: false), isFalse);
+    expect(sample(58000), isFalse, reason: 'no unmute catch-up');
+    expect(sample(57400), isTrue);
+    expect(sample(57000, busy: true), isFalse);
+    expect(sample(56000), isFalse);
+    expect(sample(55400), isTrue);
+    tension.interrupt();
+    expect(
+      sample(54000),
+      isFalse,
+      reason: 'foreground cue interrupts the quiet guard',
+    );
+    expect(sample(53400), isTrue);
+    expect(sample(60000, round: 2), isFalse);
+    expect(sample(59400, round: 2), isTrue);
+    expect(
+      sample(60000, round: 2),
+      isFalse,
+      reason: 'restored clock resets pacing',
+    );
+  });
+
+  test('every foreground cue has priority over low-health audio', () {
+    for (final cue in FightCue.values.where(
+      (c) => c != FightCue.lowHealthPulse,
+    )) {
+      final priority = FightCuePriority();
+      expect(priority.allow(FightCue.lowHealthPulse, 0), isTrue);
+      expect(priority.allow(cue, 10), isTrue);
+      expect(priority.allow(FightCue.lowHealthPulse, 10), isFalse);
+      expect(priority.allow(FightCue.lowHealthPulse, 609), isFalse);
+      expect(priority.allow(FightCue.lowHealthPulse, 610), isTrue);
+    }
+  });
+
+  test(
+    'low pulse is restrained body-first mono PCM, not a high alarm',
+    () async {
+      final data = await rootBundle.load('assets/audio/low_health_pulse.wav');
+      final wav = ByteData.sublistView(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      );
+      expect(wav.getUint16(22, Endian.little), 1);
+      expect(wav.getUint32(24, Endian.little), 22050);
+      expect(wav.getUint16(34, Endian.little), 16);
+      expect(data.lengthInBytes, lessThan(60000));
+      expect((data.lengthInBytes - 44) / 44100, closeTo(.180, .001));
+      final samples = [
+        for (var i = 44; i < data.lengthInBytes; i += 2)
+          wav.getInt16(i, Endian.little),
+      ];
+      final peak = samples.map((s) => s.abs()).reduce(max);
+      expect(peak / 32767, inInclusiveRange(.20, .23));
+      final peakIndex = samples.indexWhere((s) => s.abs() == peak);
+      expect(
+        peakIndex / 22050,
+        lessThan(.030),
+        reason: 'body first, not a long airy lead-in',
+      );
+      var crossings = 0;
+      for (var i = 1; i < samples.length; i++) {
+        if (samples[i - 1] < 0 && samples[i] >= 0) crossings++;
+      }
+      expect(
+        crossings / .180,
+        inInclusiveRange(100, 220),
+        reason: 'low body, not a warning beep',
+      );
+      final play = FightSoundVariation.sample(
+        FightCue.lowHealthPulse,
+        Random(3),
+        combo: 100,
+      );
+      expect(play.rate, 1);
+      expect(play.volume, .35);
+      expect(FightSoundVariation.varies(FightCue.lowHealthPulse), isFalse);
+      const SilentFightSounds().stopCue(FightCue.lowHealthPulse);
+    },
+  );
+
   test('pitch variants change actual PCM pitch, not just a playback setting', () async {
     final asset = await rootBundle.load('assets/audio/whoosh_light.wav');
     final original = asset.buffer.asUint8List(
@@ -87,10 +204,11 @@ void main() {
       for (var i = 0; i < 20; i++) {
         final play = FightSoundVariation.sample(cue, random);
         expect(play.rate, 1);
-        expect(
-          play.volume,
-          cue == FightCue.clockTick || cue == FightCue.comboUnravel ? .5 : .8,
-        );
+        expect(play.volume, switch (cue) {
+          FightCue.lowHealthPulse => .35,
+          FightCue.clockTick || FightCue.comboUnravel => .5,
+          _ => .8,
+        });
       }
     }
   });
