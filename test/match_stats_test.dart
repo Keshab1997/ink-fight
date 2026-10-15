@@ -14,6 +14,126 @@ HitEvent event(FighterId attacker, HitKind kind, {bool ko = false}) => HitEvent(
 );
 
 void main() {
+  test(
+    'live reset snapshots closing hits but preserves history until new match',
+    () {
+      final match = MatchController(
+        rules: const MatchRules(countdownMs: 16, roundMs: 16),
+      );
+      final stats = MatchStats();
+      addTearDown(stats.dispose);
+      stats.observeMatch(match);
+      for (var round = 1; round <= 3; round++) {
+        match.tick(.016); // countdown -> fighting
+        for (var hit = 0; hit < round; hit++) {
+          stats.onHit(event(FighterId.player, HitKind.hit));
+        }
+        match.tick(.016); // drawn round closes
+        if (!match.isFinished) {
+          var notifications = 0;
+          void count() => notifications++;
+          stats.addListener(count);
+          stats.reset(); // exactly the arena's existing boundary call
+          stats.removeListener(count);
+          expect(
+            notifications,
+            1,
+            reason: 'reset keeps its existing notification contract',
+          );
+          expect(
+            [
+              stats.hitsLanded,
+              stats.blocks,
+              stats.combo,
+              stats.maxCombo,
+              stats.hitPitchCombo,
+            ],
+            [0, 0, 0, 0, 0],
+          );
+        } else {
+          stats.observeMatch(match); // final round has no reset
+        }
+        expect(stats.history.length, round);
+        expect(stats.history.last.number, round);
+        expect(stats.history.last.outcome, MatchOutcome.draw);
+        expect(stats.history.last.hitsLanded, round);
+        expect(
+          stats.observeMatch(match),
+          same(stats.history.last),
+          reason: 'the notice and history share the recorded result',
+        );
+      }
+      final saved = stats.history;
+      expect(() => saved.clear(), throwsUnsupportedError);
+      stats.reset();
+      expect(stats.hitsLanded, 0);
+      expect(
+        stats.history.length,
+        3,
+        reason: 'a live stats reset alone is not a rematch',
+      );
+      match.reset();
+      stats.reset();
+      expect(stats.history, isEmpty);
+      expect(saved.map((r) => r.hitsLanded), [
+        1,
+        2,
+        3,
+      ], reason: 'old snapshots stay immutable');
+    },
+  );
+
+  test('final-round draw is distinct from the capped match winner and recorded once', () {
+    final tracker = RoundResultTracker();
+    tracker.observe(roundNumber: 1, playerWins: 0, rivalWins: 0);
+    tracker.observe(roundNumber: 2, playerWins: 1, rivalWins: 0, hitsLanded: 8);
+    tracker.observe(roundNumber: 3, playerWins: 1, rivalWins: 0, hitsLanded: 2);
+    tracker.observe(
+      roundNumber: 3,
+      playerWins: 1,
+      rivalWins: 0,
+      hitsLanded: 4,
+      finished: true,
+    );
+    for (var i = 0; i < 4; i++) {
+      tracker.observe(
+        roundNumber: 3,
+        playerWins: 1,
+        rivalWins: 0,
+        hitsLanded: 99,
+        finished: true,
+      );
+    }
+    expect(tracker.history.map((r) => r.outcome), [
+      MatchOutcome.playerWin,
+      MatchOutcome.draw,
+      MatchOutcome.draw,
+    ]);
+    expect(tracker.history.map((r) => r.hitsLanded), [8, 2, 4]);
+  });
+
+  test('mid-round live reset does not erase the completed rounds', () {
+    final match = MatchController(
+      rules: const MatchRules(countdownMs: 16, roundMs: 160),
+    );
+    final stats = MatchStats();
+    addTearDown(stats.dispose);
+    stats.observeMatch(match);
+    for (var i = 0; i < 11; i++) {
+      match.tick(.016);
+    }
+    stats.reset();
+    expect(stats.history.length, 1);
+    match.tick(.016);
+    stats.onHit(event(FighterId.player, HitKind.hit));
+    stats.reset();
+    expect(stats.hitsLanded, 0);
+    expect(stats.history.length, 1);
+    match.reset(); // restart, before the match was decided
+    stats.reset();
+    expect(stats.history, isEmpty);
+  });
+
   group('read-only round result feedback', () {
     for (final outcome in MatchOutcome.values) {
       test('consecutive scores describe $outcome once', () {

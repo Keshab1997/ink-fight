@@ -79,7 +79,6 @@ class _BotFightScreenState extends State<BotFightScreen>
   /// persistence, no settings, no pubspec change.
   bool _showControlsHelp = true;
   int _lastComboBreak = 0;
-  final RoundResultTracker _roundResults = RoundResultTracker();
   final ValueNotifier<RoundResult?> _roundResult = ValueNotifier(null);
   late final Future<AssetManifest> _resultAssets;
 
@@ -124,11 +123,7 @@ class _BotFightScreenState extends State<BotFightScreen>
 
   void _sampleRoundResult() {
     final match = _game.match;
-    _roundResult.value = _roundResults.observe(
-      roundNumber: match.roundNumber,
-      playerWins: match.playerRoundWins,
-      rivalWins: match.rivalRoundWins,
-    );
+    _roundResult.value = _game.stats.observeMatch(match);
   }
 
   void _rematch() {
@@ -655,7 +650,10 @@ class _RoundEndCard extends StatelessWidget {
       ),
       child: Container(
         key: const ValueKey('round-end-paper'),
-        padding: const EdgeInsets.fromLTRB(28, 22, 28, 24),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height - 24,
+        ),
+        padding: const EdgeInsets.fromLTRB(28, 16, 28, 16),
         decoration: BoxDecoration(
           color: InkColors.white,
           // Left = YOU, right = RIVAL, matching the HUD. A draw has no
@@ -696,120 +694,202 @@ class _RoundEndCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(19),
           border: Border.all(color: InkColors.ink, width: 2),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(
-              width: 44,
-              height: 4,
-              child: ColoredBox(color: Color(0xFFC51F3A)),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: 292,
-              child: Row(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 44,
+                height: 4,
+                child: ColoredBox(color: Color(0xFFC51F3A)),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: 292,
+                child: Row(
+                  children: [
+                    _ResultFighterArt(
+                      fighter: FighterId.player,
+                      tick: tick,
+                      outcome: game.match.outcome,
+                      assets: assets,
+                    ),
+                    Expanded(
+                      child: Text(
+                        label,
+                        key: const ValueKey('match-result-label'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: InkColors.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ),
+                    _ResultFighterArt(
+                      fighter: FighterId.rival,
+                      tick: tick,
+                      outcome: game.match.outcome,
+                      assets: assets,
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                'ROUNDS ${game.match.playerRoundWins} – ${game.match.rivalRoundWins}',
+                key: const ValueKey('match-result-score'),
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _ResultStats(
+                stats: game.stats,
+                elapsedMs:
+                    game.match.rules.roundMs - game.match.timeRemainingMs,
+                playerLost: game.match.outcome == MatchOutcome.rivalWin,
+              ),
+              _RoundRecap(history: game.stats.history),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _ResultFighterArt(
-                    fighter: FighterId.player,
-                    tick: tick,
-                    outcome: game.match.outcome,
-                    assets: assets,
-                  ),
-                  Expanded(
-                    child: Text(
-                      label,
-                      key: const ValueKey('match-result-label'),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: InkColors.ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.1,
+                  Material(
+                    color: InkColors.ink,
+                    borderRadius: BorderRadius.circular(13),
+                    child: InkWell(
+                      onTap: onRematch,
+                      borderRadius: BorderRadius.circular(13),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 11,
+                        ),
+                        child: Text(
+                          'REMATCH',
+                          style: TextStyle(
+                            color: InkColors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                  _ResultFighterArt(
-                    fighter: FighterId.rival,
-                    tick: tick,
-                    outcome: game.match.outcome,
-                    assets: assets,
+                  const SizedBox(width: 10),
+                  Material(
+                    color: InkColors.white,
+                    borderRadius: BorderRadius.circular(13),
+                    child: InkWell(
+                      onTap: onLeave,
+                      borderRadius: BorderRadius.circular(13),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 11,
+                        ),
+                        child: Text(
+                          'LEAVE',
+                          style: TextStyle(
+                            color: InkColors.inkSoft,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
-            ),
-            Text(
-              'ROUNDS ${game.match.playerRoundWins} – ${game.match.rivalRoundWins}',
-              key: const ValueKey('match-result-score'),
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ResultStats(
-              stats: game.stats,
-              elapsedMs: game.match.rules.roundMs - game.match.timeRemainingMs,
-              playerLost: game.match.outcome == MatchOutcome.rivalWin,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Material(
-                  color: InkColors.ink,
-                  borderRadius: BorderRadius.circular(13),
-                  child: InkWell(
-                    onTap: onRematch,
-                    borderRadius: BorderRadius.circular(13),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 11,
-                      ),
-                      child: Text(
-                        'REMATCH',
-                        style: TextStyle(
-                          color: InkColors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Material(
-                  color: InkColors.white,
-                  borderRadius: BorderRadius.circular(13),
-                  child: InkWell(
-                    onTap: onLeave,
-                    borderRadius: BorderRadius.circular(13),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 11,
-                      ),
-                      child: Text(
-                        'LEAVE',
-                        style: TextStyle(
-                          color: InkColors.inkSoft,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// One immutable row per completed round, sourced from the same recorder as
+/// the countdown notice. YOUR HITS means clean player hits, including the KO.
+class _RoundRecap extends StatelessWidget {
+  const _RoundRecap({required this.history});
+  final List<RoundResult> history;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    key: const ValueKey('round-recap'),
+    width: 292,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
+        const Row(
+          children: [
+            Expanded(
+              child: Text(
+                'ROUND',
+                style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                'RESULT',
+                style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                'YOUR HITS',
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
+        ),
+        for (final round in history)
+          Padding(
+            key: ValueKey('round-recap-${round.number}'),
+            padding: const EdgeInsets.only(top: 3),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${round.number}',
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    switch (round.outcome) {
+                      MatchOutcome.playerWin => 'YOU WON',
+                      MatchOutcome.rivalWin => 'RIVAL WON',
+                      MatchOutcome.draw => 'DRAW',
+                    },
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    '${round.hitsLanded}',
+                    key: ValueKey('round-recap-hits-${round.number}'),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    ),
+  );
 }
 
 /// Loops every delivered pose frame, read-only. The screen ticker owns the

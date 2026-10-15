@@ -516,6 +516,12 @@ void main() {
             expect(find.text('REMATCH'), findsNothing);
             expectPips(FighterId.player, i);
             expectPips(FighterId.rival, 1);
+            expect(game.stats.history.length, i + 1);
+            expect(game.stats.history.last.hitsLanded, i);
+            expect(
+              game.stats.observeMatch(game.match),
+              same(game.stats.history.last),
+            );
             // The notice is round-local and disappears on live combat.
             while (game.match.phase == MatchPhase.countdown) {
               game.match.tick(.016);
@@ -540,16 +546,36 @@ void main() {
         await tester.pump(const Duration(milliseconds: 180));
         expect(find.text('MATCH WON'), findsOneWidget);
         expect(find.text('ROUNDS 2 – 1'), findsOneWidget);
+        await tester.pump(); // final-round capture notifies the recap subtree
+        expect(game.stats.history.map((r) => r.hitsLanded), [0, 1, 1]);
+        expect(game.stats.history.map((r) => r.outcome), [
+          MatchOutcome.rivalWin,
+          MatchOutcome.playerWin,
+          MatchOutcome.playerWin,
+        ]);
+        for (var round = 1; round <= 3; round++) {
+          expect(find.byKey(ValueKey('round-recap-$round')), findsOneWidget);
+          expect(
+            tester
+                .widget<Text>(find.byKey(ValueKey('round-recap-hits-$round')))
+                .data,
+            round == 1 ? '0' : '1',
+          );
+        }
+        expect(find.text('YOUR HITS'), findsOneWidget);
         expect(find.byKey(const ValueKey('round-result-card')), findsNothing);
         expectPips(FighterId.player, 2);
         expectPips(FighterId.rival, 1);
         expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.text('REMATCH'));
         await tester.tap(find.text('REMATCH'));
         await tester.pump(const Duration(milliseconds: 1));
         await tester.pump();
         game.pauseEngine();
         expectPips(FighterId.player, 0);
         expectPips(FighterId.rival, 0);
+        expect(game.stats.history, isEmpty);
+        expect(find.byKey(const ValueKey('round-recap')), findsNothing);
         expect(find.text('3'), findsOneWidget);
         expect(find.byKey(const ValueKey('round-result-card')), findsNothing);
         expect(find.byKey(const ValueKey('match-result-label')), findsNothing);

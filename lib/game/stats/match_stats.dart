@@ -13,6 +13,30 @@ class MatchStats extends ChangeNotifier {
   int _maxCombo = 0;
   int _hitPitchCombo = 0;
   int _comboBreakVersion = 0;
+  final RoundResultTracker _roundResults = RoundResultTracker();
+  MatchController? _trackedMatch;
+
+  /// Immutable completed-round snapshots; live reset() never discards them.
+  List<RoundResult> get history => _roundResults.history;
+
+  /// Bind/read the existing controller, without changing it or draining events.
+  /// The arena calls reset after draining the closing round's hits. Sampling
+  /// once before that reset preserves those totals even between screen frames.
+  RoundResult? observeMatch(MatchController match) {
+    _trackedMatch = match;
+    final previousLength = _roundResults._history.length;
+    final result = _captureRound(match);
+    if (_roundResults._history.length != previousLength) notifyListeners();
+    return result;
+  }
+
+  RoundResult? _captureRound(MatchController match) => _roundResults.observe(
+    roundNumber: match.roundNumber,
+    playerWins: match.playerRoundWins,
+    rivalWins: match.rivalRoundWins,
+    hitsLanded: _hitsLanded,
+    finished: match.isFinished,
+  );
 
   int get hitsLanded => _hitsLanded;
 
@@ -72,6 +96,8 @@ class MatchStats extends ChangeNotifier {
   }
 
   void reset() {
+    final match = _trackedMatch;
+    if (match != null) _captureRound(match);
     _hitsLanded = 0;
     _blocks = 0;
     _combo = 0;
@@ -107,9 +133,14 @@ class MatchClockCues {
 
 /// A presentation snapshot, never a rules decision or a HUD-owned round count.
 class RoundResult {
-  const RoundResult({required this.number, required this.outcome});
+  const RoundResult({
+    required this.number,
+    required this.outcome,
+    this.hitsLanded = 0,
+  });
   final int number;
   final MatchOutcome outcome;
+  final int hitsLanded;
 }
 
 /// Reads consecutive authoritative score snapshots to describe the round that
@@ -118,11 +149,15 @@ class RoundResult {
 class RoundResultTracker {
   ({int roundNumber, int playerWins, int rivalWins})? _previous;
   RoundResult? _result;
+  final List<RoundResult> _history = [];
+  List<RoundResult> get history => List.unmodifiable(_history);
 
   RoundResult? observe({
     required int roundNumber,
     required int playerWins,
     required int rivalWins,
+    int hitsLanded = 0,
+    bool finished = false,
   }) {
     final previous = _previous;
     _previous = (
@@ -130,12 +165,21 @@ class RoundResultTracker {
       playerWins: playerWins,
       rivalWins: rivalWins,
     );
-    if (roundNumber == 1 || previous == null) {
+    // Only an authoritative fresh match clears history, including a restart
+    // from pause. A drawn final round at 0–0 is not a fresh match.
+    if (roundNumber == 1 && playerWins == 0 && rivalWins == 0 && !finished) {
+      _history.clear();
       return _result = null;
     }
-    if (roundNumber == previous.roundNumber) return _result;
-    _result = null;
-    if (roundNumber != previous.roundNumber + 1) return null;
+    if (previous == null) return _result = null;
+    final closedNumber = finished ? roundNumber : roundNumber - 1;
+    if (_history.any((round) => round.number == closedNumber)) return _result;
+    if (finished
+        ? roundNumber != previous.roundNumber
+        : roundNumber != previous.roundNumber + 1) {
+      if (roundNumber != previous.roundNumber) _result = null;
+      return _result;
+    }
     final playerDelta = playerWins - previous.playerWins;
     final rivalDelta = rivalWins - previous.rivalWins;
     final outcome = switch ((playerDelta, rivalDelta)) {
@@ -145,7 +189,13 @@ class RoundResultTracker {
       _ => null,
     };
     if (outcome != null) {
-      _result = RoundResult(number: previous.roundNumber, outcome: outcome);
+      // This is the sole writer for both the countdown notice and the recap.
+      _result = RoundResult(
+        number: closedNumber,
+        outcome: outcome,
+        hitsLanded: hitsLanded,
+      );
+      _history.add(_result!);
     }
     return _result;
   }
