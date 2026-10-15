@@ -53,9 +53,12 @@ const List<int> _kHurtStepsMs = <int>[40, 30, 45, 35, 70];
 /// skid). Not looping: 005 holds if the stun runs longer.
 const List<int> _kHurtHeavyStepsMs = <int>[50, 40, 45, 45, 120, 120];
 
-/// §1 jump: takeoff 100, rise 150, apex 150, fall 160, landing 140 = 700 ms =
+/// §1 jump, 7 frames. The crouch 000 and the push-off in-between 001 share the
+/// 100 ms takeoff; rise 002 holds 150; the apex 003 and the turnover in-between
+/// 004 share the 150 ms top; fall 005 holds 160 and landing 006 holds 140. The
+/// phases still start at 0 / 100 / 250 / 400 / 560 ms, and the total is 700 ms =
 /// `rules.jumpMs`, so the landing frame meets the ground.
-const List<int> _kJumpStepsMs = <int>[100, 150, 150, 160, 140];
+const List<int> _kJumpStepsMs = <int>[50, 50, 150, 75, 75, 160, 140];
 
 /// §1 block, 6 frames: the raise (000–001) shares 90 ms; the held guard loops
 /// 002–003 at 140 ms each while it is up; the release (004–005) shares the

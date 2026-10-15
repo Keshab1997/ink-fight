@@ -237,6 +237,12 @@ void main() {
         tick(game, 1);
         expect(player.animation!.frames, hasLength(8));
         expect(totalMsOf(player), rules.heavyAttack.totalMs.toDouble());
+
+        pastCountdown(game); // let the kick finish into idle
+        game.sendPlayerAction(InputAction.jump);
+        tick(game, 1);
+        expect(player.animation!.frames, hasLength(7));
+        expect(totalMsOf(player), rules.jumpMs.toDouble());
       },
     );
 

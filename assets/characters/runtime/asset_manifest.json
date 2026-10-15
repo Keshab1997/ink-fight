@@ -6,8 +6,8 @@
   "characters": {
     "bot_crimson_rival": {
       "source_archive": "assets/characters/originals/bot_crimson_rival",
-      "frame_count": 66,
-      "expected_frame_count": 66,
+      "frame_count": 68,
+      "expected_frame_count": 68,
       "frames": [
         {
           "file": "bot_crimson_rival_block_000.png",
@@ -215,6 +215,16 @@
           "runtime": "assets/characters/runtime/bot_crimson_rival/jump/bot_crimson_rival_jump_004.png"
         },
         {
+          "file": "bot_crimson_rival_jump_005.png",
+          "animation": "jump",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/jump/bot_crimson_rival_jump_005.png"
+        },
+        {
+          "file": "bot_crimson_rival_jump_006.png",
+          "animation": "jump",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/jump/bot_crimson_rival_jump_006.png"
+        },
+        {
           "file": "bot_crimson_rival_knockdown_000.png",
           "animation": "knockdown",
           "runtime": "assets/characters/runtime/bot_crimson_rival/knockdown/bot_crimson_rival_knockdown_000.png"
@@ -344,8 +354,8 @@
     },
     "player_ink_fighter": {
       "source_archive": "assets/characters/originals/player_ink_fighter",
-      "frame_count": 66,
-      "expected_frame_count": 66,
+      "frame_count": 68,
+      "expected_frame_count": 68,
       "frames": [
         {
           "file": "player_ink_fighter_block_000.png",
@@ -551,6 +561,16 @@
           "file": "player_ink_fighter_jump_004.png",
           "animation": "jump",
           "runtime": "assets/characters/runtime/player_ink_fighter/jump/player_ink_fighter_jump_004.png"
+        },
+        {
+          "file": "player_ink_fighter_jump_005.png",
+          "animation": "jump",
+          "runtime": "assets/characters/runtime/player_ink_fighter/jump/player_ink_fighter_jump_005.png"
+        },
+        {
+          "file": "player_ink_fighter_jump_006.png",
+          "animation": "jump",
+          "runtime": "assets/characters/runtime/player_ink_fighter/jump/player_ink_fighter_jump_006.png"
         },
         {
           "file": "player_ink_fighter_knockdown_000.png",

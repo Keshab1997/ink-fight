@@ -66,13 +66,15 @@ One in-between in each half-stride, at the same place, so both halves of the
 cycle keep the same number of frames. Uneven halves would make one step
 slower than the other while the body moves at a constant speed.
 
-### Jump — 5 frames
+### Jump — 7 frames (5 keyframes + 2 in-betweens)
 
 - `jump_000`: compact crouch before takeoff, feet still on baseline.
-- `jump_001`: takeoff with knees bending and fists raised, clear upward energy.
-- `jump_002`: airborne apex, knees tucked slightly, full silhouette readable.
-- `jump_003`: falling pose with legs preparing for landing.
-- `jump_004`: grounded landing with a small ink impact mark, feet back on baseline.
+- `jump_001` (in-between, §5b): the push-off. The legs straighten out of the crouch, the heels lift, both gloves rise past the face toward the head, and the body rises. Spell out the geometry and the facing ("the same three-quarter view facing RIGHT as both neighbours, never facing the viewer"). Without that, the attempts drew an idle stance, a one-foot stride and a frontal pose.
+- `jump_002`: takeoff with knees bending and fists raised, clear upward energy.
+- `jump_003`: airborne apex, knees tucked slightly, full silhouette readable.
+- `jump_004` (in-between, §5b): the turnover at the top. Both gloves come down from above the head to forehead or chin height, the legs start to unfold downward from the tuck, and the scarf begins to lift. No motion lines or red marks (the rival's apex frame has some).
+- `jump_005`: falling pose with legs preparing for landing.
+- `jump_006`: grounded landing with a small ink impact mark, feet back on baseline.
 
 ### Light punch — 7 frames (5 keyframes + 2 in-betweens)
 
@@ -245,6 +247,7 @@ step / mean silhouette change, before → after):
 | hurt | 56 px / 0.68 → 72 px / 0.52 ¹ | 14 px / 0.33 → 49 px / 0.26 ¹ |
 | heavy kick | 177 px / 0.44 → 216 px / 0.45 ² | 155 px / 0.36 → 155 px / 0.32 ³ |
 | hurt heavy | 219 px / 0.59 → 181 px / 0.55 | 178 px / 0.50 → 96 px / 0.43 ⁵ |
+| jump ⁶ | 102 px / 0.51 → 102 px / 0.44 | 40 px / 0.40 → 34 px / 0.38 |
 | block raise ⁴ | 33 px / 0.23 → 23 px / 0.18 | 0 px / 0.08 → 0 px / 0.05 |
 | block release ⁴ | 18 px / 0.26 → 27 px / 0.21 | 42 px / 0.27 → 29 px / 0.22 |
 
@@ -268,6 +271,13 @@ guard 53.8, idle to the new frame 42.6, the new frame to the guard 20.2.
 18 px past its neighbours' range, 3 px over the tolerance, and is accepted with
 that note. Registering it would have worsened its silhouette change against the
 two neighbours from 0.87 to 1.26.
+⁶ Jump is a locomotion cycle, so the head is the anchor, and the game lifts the
+sprite along the arc from the first millisecond, so the feet are never planted.
+The player's largest silhouette step grows from 0.58 to 0.60: the push-off
+stands much closer to the airborne tuck (0.27) than to the crouch (0.60), with
+its head on the tuck's (499 against 498 px). The rival's push-off head sits
+18 px past its neighbours', 3 px over the tolerance, and is accepted with that
+note; its largest head step still shrinks, from 40 to 34 px.
 
 Rejected, with the measurement: the player's idle 002 → 003 in-between, four
 attempts. Twice the scarf came out longer than in frame 003 (the largest head
@@ -301,6 +311,16 @@ The first recoil → skid attempt was the recoil frame with a new face and a
 ground line (silhouette distance 0.10). The rival's impact → recoil in-between
 passed first time. It waited one batch for the player's, because the recipe is
 shared.
+
+Jump: the turnover in-betweens passed first time for both fighters; the push-off
+took retries.
+- The player's first push-off was a plain standing stance.
+- The rival's first was a one-foot stride with the arms still at the chest.
+- His second faced the viewer. The facing check caught it: the crimson centroid
+  sat at −2 px, against +70 and +41 px for the neighbours.
+
+Both landed once the prompt spelled out the geometry. For the rival it also took
+a gentler pose, close to the crouch, with the three-quarter facing written out.
 
 **Haze.** A generation can leave a faint grey ground smudge under a lifted foot
 (the rival's `walk_002` did). `tool/process_character_assets.py` now clears any

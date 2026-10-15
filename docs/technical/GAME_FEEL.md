@@ -63,8 +63,10 @@ beats — then hold the last frame until hitstun ends — 220 ms light, 420 ms h
 **hurt_heavy** is 6 frames, [50, 40, 45, 45, 120, 120]: impact 000 at 0,
 in-between 001 at 50, recoil 002 at 90, in-between 003 at 135, skid 004 at 180,
 recovered 005 at 300) ·
-**jump** (takeoff 100, rise 150, apex 150, fall 160, landing 140 = 700 ms =
-`jumpMs`) · **walk** (see §6; 8 frames since the in-betweens) · **idle** (one
+**jump** (7 frames, [50, 50, 150, 75, 75, 160, 140] = 700 ms = `jumpMs`: crouch
+000 at 0, push-off 001 at 50, rise 002 at 100, apex 003 at 250, turnover 004 at
+325, fall 005 at 400, landing 006 at 560. The in-betweens split the takeoff and
+the apex, and the phase starts 0 / 100 / 250 / 400 / 560 are kept) · **walk** (see §6; 8 frames since the in-betweens) · **idle** (one
 560 ms breath — the old 4 × 140 ms — spread evenly over however many frames are
 delivered: the rival's 6 hold ≈93 ms each, the player's 5 hold 112 ms until his
 last in-between lands).
