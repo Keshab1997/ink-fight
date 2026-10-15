@@ -202,7 +202,7 @@ void main() {
         tick(game, 1);
       }
       expect(game.match.stateOf(FighterId.player).action, FighterAction.idle);
-      expect(player.animation!.frames, hasLength(5));
+      expect(player.animation!.frames, hasLength(6));
     });
 
     test(
@@ -210,10 +210,10 @@ void main() {
       () async {
         final game = await loadedGame();
         pastCountdown(game);
-        // Four keyframes plus the loop-seam in-between (prompt pack §5); the
-        // rival also has the 002 → 003 one, the player's is still to come.
+        // Four keyframes plus two in-betweens (prompt pack §5): 002 → 003 and
+        // the loop seam, for both fighters.
         for (final (fighter, frames) in [
-          (playerOf(game), 5),
+          (playerOf(game), 6),
           (rivalOf(game), 6),
         ]) {
           expect(fighter.animation!.frames, hasLength(frames));

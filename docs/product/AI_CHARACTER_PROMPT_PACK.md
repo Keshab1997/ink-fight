@@ -45,9 +45,11 @@ The following action descriptions are appended one at a time to the universal fr
 - `idle_004`: return to the exact neutral ready stance, matching frame 000.
 - `idle_005` — **in-between, loop seam (004 → 000)**: idle loop-seam in-between with the same ready stance, face, gloves and feet as both neighbouring frames; the long black scarf tail falls back halfway toward the short resting flick of frame 000, with a tiny exhale in the chest, so the idle loop closes without a pop.
 
-`bot_crimson_rival` has all six. `player_ink_fighter` has five until its
-002 → 003 in-between passes the gate (§5b): its `idle_003` is the neutral
-return and `idle_004` the seam.
+Both fighters have all six. For the player, the `idle_003` prompt sends the
+scarf tail out horizontally to the left at shoulder height, never above the
+shoulders. The delivered one is a touch longer than frame 004's, which reads as
+the scarf flicking out and settling. It is foot-registered (§5b), so the body
+does not move.
 
 ### Walk — 8 frames (6 keyframes + 2 in-betweens, one per half-stride)
 
@@ -233,7 +235,7 @@ step / mean silhouette change, before → after):
 
 | Cycle | player | rival |
 |---|---|---|
-| idle | 13 px / 0.11 → 13 px / 0.09 (seam only) | 43 px / 0.23 → 29 px / 0.18 |
+| idle | 13 px / 0.11 → 12 px / 0.08 (seam + 002 → 003, registered) | 43 px / 0.23 → 29 px / 0.18 |
 | walk | 8 px / 0.18 → 8 px / 0.15 | 40 px / 0.25 → 42 px / 0.22 |
 | light punch | 86 px / 0.28 → 52 px / 0.29 | 35 px / 0.25 → 42 px / 0.22 |
 | hurt | 56 px / 0.68 → 72 px / 0.52 ¹ | 14 px / 0.33 → 49 px / 0.26 ¹ |
@@ -266,7 +268,9 @@ distance 0.00). Name the pose's geometry and say "not a copy of either input".
 The second attempt drew the right pose, but plain centring put its planted foot
 96 px past the extension frame's (foot path 299 → 472 → 376 px), a
 forward-and-back lurch in the wind-up. That is the case foot registration
-exists for, and it is the frame that landed.
+exists for, and it is the frame that landed. So is the fifth idle attempt:
+registered, its body stays put (the loop's largest head step is 12 px) and the
+slightly long scarf reads as a flick.
 
 **Haze.** A generation can leave a faint grey ground smudge under a lifted foot
 (the rival's `walk_002` did). `tool/process_character_assets.py` now clears any
