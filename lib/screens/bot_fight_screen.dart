@@ -4,6 +4,7 @@ import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
 import '../game/audio/fight_sounds.dart';
 import '../game/bot/bot_strategy.dart';
@@ -72,10 +73,18 @@ class _BotFightScreenState extends State<BotFightScreen>
   /// and stays away after GOT IT — a plain State field on purpose: no
   /// persistence, no settings, no pubspec change.
   bool _showControlsHelp = true;
+  int _roundNumber = 1;
+  double _roundMarkerMs = 0;
+  Duration _markerTick = Duration.zero;
+  int _lastComboBreak = 0;
+  late final Future<AssetManifest> _resultAssets;
+
+  bool get _showRoundMarker => _roundMarkerMs > 0;
 
   @override
   void initState() {
     super.initState();
+    _resultAssets = AssetManifest.loadFromAssetBundle(rootBundle);
     _game = InkFightBattleGame(
       botProfile: BotProfile.forDifficulty(widget.difficulty),
       // The app path is the real thing; a test hands in its own seam.
@@ -83,6 +92,7 @@ class _BotFightScreenState extends State<BotFightScreen>
           widget.sounds ??
           FlameFightSounds(hitCombo: () => _game.stats.hitPitchCombo),
     );
+    _game.stats.addListener(_onStatsChanged);
     _applyPreferences();
     widget.settings.addListener(_applyPreferences);
     WidgetsBinding.instance.addObserver(this);
@@ -93,16 +103,47 @@ class _BotFightScreenState extends State<BotFightScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.settings.removeListener(_applyPreferences);
+    _game.stats.removeListener(_onStatsChanged);
     _ticker.dispose();
     _frame.dispose();
     _game.pauseEngine();
     super.dispose();
   }
 
+  void _onStatsChanged() {
+    final version = _game.stats.comboBreakVersion;
+    if (version == _lastComboBreak) return;
+    _lastComboBreak = version;
+    if (_game.soundEnabled) _game.sounds.play(FightCue.comboUnravel);
+  }
+
+  void _startNextRound() {
+    _game.pauseEngine();
+    _game.restartMatch();
+    _wasFightBeat = false;
+    setState(() {
+      _roundNumber++;
+      _roundMarkerMs = 600;
+      _markerTick = _frame.value;
+    });
+    if (_game.soundEnabled) _game.sounds.play(FightCue.roundSting);
+  }
+
   bool _wasFightBeat = false;
   final MatchClockCues _clockCues = MatchClockCues();
 
   void _onTick(Duration elapsed) {
+    if (_showRoundMarker) {
+      final dt = (elapsed - _markerTick).inMicroseconds / 1000;
+      _markerTick = elapsed;
+      if (!_paused && !_pausedBySystem && !_showControlsHelp) {
+        _roundMarkerMs -= dt;
+        if (!_showRoundMarker) {
+          setState(() => _roundMarkerMs = 0);
+          _game.resumeEngine();
+        }
+      }
+    }
     _frame.value = elapsed;
     // Flame's simulation ticker may run after this screen's ticker. Sample
     // after paint so this cue sees the exact state the chip/arena just drew,
@@ -112,6 +153,8 @@ class _BotFightScreenState extends State<BotFightScreen>
         return;
       }
       final match = _game.match;
+      if (match.isFinished) _game.stats.finishRound();
+      if (_showRoundMarker) return;
       final fightBeat =
           match.phase == MatchPhase.countdown &&
           match.countdownRemainingMs <= match.rules.countdownMs ~/ 4;
@@ -198,11 +241,12 @@ class _BotFightScreenState extends State<BotFightScreen>
     if (!_paused) {
       return;
     }
-    _game.resumeEngine();
+    if (!_showRoundMarker) _game.resumeEngine();
     setState(() => _paused = false);
   }
 
   void _restartFromPause() {
+    _roundMarkerMs = 0;
     _game.restartMatch();
     _resume();
   }
@@ -248,6 +292,8 @@ class _BotFightScreenState extends State<BotFightScreen>
           child: Stack(
             children: [
               Positioned.fill(child: GameWidget(game: _game)),
+              if (_showRoundMarker)
+                Positioned.fill(child: _RoundMarker(number: _roundNumber)),
               Positioned(
                 top: 12,
                 left: 12,
@@ -261,7 +307,11 @@ class _BotFightScreenState extends State<BotFightScreen>
                 top: 14,
                 left: 72,
                 right: 72,
-                child: _BattleHud(game: _game, tick: _frame),
+                child: _BattleHud(
+                  game: _game,
+                  tick: _frame,
+                  roundIntro: _showRoundMarker,
+                ),
               ),
               Positioned(
                 top: 12,
@@ -279,17 +329,6 @@ class _BotFightScreenState extends State<BotFightScreen>
                         ),
                 ),
               ),
-              Positioned.fill(
-                child: ValueListenableBuilder<int>(
-                  valueListenable: _game.hudVersion,
-                  // The card waits for the arena: a knockout plays its
-                  // slow-motion and frozen beat first (GAME_FEEL §5), a match
-                  // the clock decided stamps in at once.
-                  builder: (context, _, _) => _game.roundEndCardVisible
-                      ? _RoundEndCard(game: _game, onLeave: _quitToMenu)
-                      : const SizedBox.shrink(),
-                ),
-              ),
               Positioned(
                 left: 16,
                 right: 16,
@@ -302,6 +341,22 @@ class _BotFightScreenState extends State<BotFightScreen>
                   onMoveAxis: _game.setPlayerMoveAxis,
                   game: _game,
                   tick: _frame,
+                ),
+              ),
+              Positioned.fill(
+                child: ValueListenableBuilder<int>(
+                  valueListenable: _game.hudVersion,
+                  // The card waits for the arena: a knockout plays its
+                  // slow-motion and frozen beat first (GAME_FEEL §5), a match
+                  // the clock decided stamps in at once.
+                  builder: (context, _, _) => _game.roundEndCardVisible
+                      ? _RoundEndCard(
+                          game: _game,
+                          onLeave: _quitToMenu,
+                          onRematch: _startNextRound,
+                          assets: _resultAssets,
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ),
               if (_paused)
@@ -328,7 +383,12 @@ class _BotFightScreenState extends State<BotFightScreen>
 }
 
 class _BattleHud extends StatelessWidget {
-  const _BattleHud({required this.game, required this.tick});
+  const _BattleHud({
+    required this.game,
+    required this.tick,
+    this.roundIntro = false,
+  });
+  final bool roundIntro;
 
   final InkFightBattleGame game;
 
@@ -364,7 +424,9 @@ class _BattleHud extends StatelessWidget {
             // between hudVersion bumps, so the chip repaints them itself.
             ListenableBuilder(
               listenable: tick,
-              builder: (context, _) => _TimerChip(game: game),
+              builder: (context, _) => roundIntro
+                  ? const SizedBox(width: 76, height: 32)
+                  : _TimerChip(game: game),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -466,7 +528,14 @@ class _TimerChip extends StatelessWidget {
 
 /// The decided-match card: outcome, a rematch, and the way out.
 class _RoundEndCard extends StatelessWidget {
-  const _RoundEndCard({required this.game, required this.onLeave});
+  const _RoundEndCard({
+    required this.game,
+    required this.onLeave,
+    required this.onRematch,
+    required this.assets,
+  });
+  final VoidCallback onRematch;
+  final Future<AssetManifest> assets;
 
   final InkFightBattleGame game;
 
@@ -553,17 +622,41 @@ class _RoundEndCard extends StatelessWidget {
               child: ColoredBox(color: Color(0xFFC51F3A)),
             ),
             const SizedBox(height: 10),
-            Text(
-              label,
-              style: const TextStyle(
-                color: InkColors.ink,
-                fontSize: 19,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.4,
+            SizedBox(
+              width: 292,
+              child: Row(
+                children: [
+                  _ResultFighterArt(
+                    fighter: FighterId.player,
+                    outcome: game.match.outcome,
+                    assets: assets,
+                  ),
+                  Expanded(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: InkColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                  ),
+                  _ResultFighterArt(
+                    fighter: FighterId.rival,
+                    outcome: game.match.outcome,
+                    assets: assets,
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
-            _ResultStats(stats: game.stats),
+            _ResultStats(
+              stats: game.stats,
+              elapsedMs: game.match.rules.roundMs - game.match.timeRemainingMs,
+              playerLost: game.match.outcome == MatchOutcome.rivalWin,
+            ),
             const SizedBox(height: 16),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -572,7 +665,7 @@ class _RoundEndCard extends StatelessWidget {
                   color: InkColors.ink,
                   borderRadius: BorderRadius.circular(13),
                   child: InkWell(
-                    onTap: game.restartMatch,
+                    onTap: onRematch,
                     borderRadius: BorderRadius.circular(13),
                     child: const Padding(
                       padding: EdgeInsets.symmetric(
@@ -624,28 +717,159 @@ class _RoundEndCard extends StatelessWidget {
   }
 }
 
-/// Whole-match player totals, not the final streak or the rival's blocks.
-class _ResultStats extends StatelessWidget {
-  const _ResultStats({required this.stats});
-  final MatchStats stats;
+/// Reads the delivered final pose from the bundle manifest. Never assumes
+/// five (or any other count) of Agent A's frames, nor edits those assets.
+class _ResultFighterArt extends StatelessWidget {
+  const _ResultFighterArt({
+    required this.fighter,
+    required this.outcome,
+    required this.assets,
+  });
+  final FighterId fighter;
+  final MatchOutcome? outcome;
+  final Future<AssetManifest> assets;
 
   @override
   Widget build(BuildContext context) {
+    final name = fighter == FighterId.player
+        ? 'player_ink_fighter'
+        : 'bot_crimson_rival';
+    final won =
+        outcome ==
+        (fighter == FighterId.player
+            ? MatchOutcome.playerWin
+            : MatchOutcome.rivalWin);
+    final pose = outcome == null || outcome == MatchOutcome.draw
+        ? 'idle'
+        : won
+        ? 'victory'
+        : 'defeat';
+    final prefix = 'assets/characters/runtime/$name/$pose/';
     return SizedBox(
-      width: 252,
+      width: 64,
+      height: 76,
+      child: FutureBuilder<AssetManifest>(
+        future: assets,
+        builder: (context, snapshot) {
+          final frames =
+              snapshot.data
+                  ?.listAssets()
+                  .where(
+                    (path) => path.startsWith(prefix) && path.endsWith('.png'),
+                  )
+                  .toList() ??
+              <String>[];
+          frames.sort();
+          if (frames.isEmpty) return const SizedBox.shrink();
+          return Image.asset(
+            frames.last,
+            key: ValueKey('result-art-$fighter'),
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+            semanticLabel:
+                '${fighter == FighterId.player ? 'You' : 'Crimson Rival'} $pose pose',
+            errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// A quiet pre-count stamp occupying only the countdown's own canvas slot.
+/// The engine is held at the start of its countdown until this clears.
+class _RoundMarker extends StatelessWidget {
+  const _RoundMarker({required this.number});
+  final int number;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: LayoutBuilder(
+      builder: (context, constraints) => Align(
+        alignment: const Alignment(0, -.37),
+        child: SizedBox(
+          width: math
+              .max(120.0, constraints.maxHeight * .24)
+              .clamp(0.0, constraints.maxWidth * .48),
+          height: constraints.maxHeight * .24,
+          child: ColoredBox(
+            color: InkColors.paper,
+            child: TweenAnimationBuilder<double>(
+              key: ValueKey('round-marker-$number'),
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              builder: (context, progress, child) => Opacity(
+                key: const ValueKey('round-marker-opacity'),
+                opacity: progress,
+                child: Transform.scale(
+                  key: const ValueKey('round-marker-scale'),
+                  scale: 1.06 - .06 * progress,
+                  child: child,
+                ),
+              ),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'ROUND $number',
+                    style: const TextStyle(
+                      color: InkColors.ink,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Whole-match player totals, not the final streak or the rival's blocks.
+class _ResultStats extends StatelessWidget {
+  const _ResultStats({
+    required this.stats,
+    required this.elapsedMs,
+    required this.playerLost,
+  });
+  final MatchStats stats;
+  final int elapsedMs;
+  final bool playerLost;
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = (elapsedMs / 1000).ceil();
+    final time =
+        '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
+    return Container(
+      key: const ValueKey('result-stats-row'),
+      width: 292,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: playerLost
+            ? InkColors.ink.withValues(alpha: .025)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+      ),
       child: Row(
         children: [
-          for (final entry in <String, int>{
-            'HITS LANDED': stats.hitsLanded,
-            'BLOCKS': stats.blocks,
-            'MAX COMBO': stats.maxCombo,
+          for (final entry in <String, String>{
+            'HITS LANDED': '${stats.hitsLanded}',
+            'BLOCKS': '${stats.blocks}',
+            'MAX COMBO': '${stats.maxCombo}',
+            'TIME': time,
           }.entries)
             Expanded(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '${entry.value}',
+                    entry.value,
                     key: ValueKey('result-${entry.key}'),
                     style: const TextStyle(
                       color: InkColors.ink,
@@ -654,15 +878,20 @@ class _ResultStats extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      entry.key,
-                      style: const TextStyle(
-                        color: InkColors.inkSoft,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: .6,
+                  Tooltip(
+                    message: entry.key == 'TIME'
+                        ? 'Elapsed fight time'
+                        : entry.key,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        entry.key,
+                        style: const TextStyle(
+                          color: InkColors.inkSoft,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: .6,
+                        ),
                       ),
                     ),
                   ),
