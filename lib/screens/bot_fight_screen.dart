@@ -73,13 +73,8 @@ class _BotFightScreenState extends State<BotFightScreen>
   /// and stays away after GOT IT — a plain State field on purpose: no
   /// persistence, no settings, no pubspec change.
   bool _showControlsHelp = true;
-  int _roundNumber = 1;
-  double _roundMarkerMs = 0;
-  Duration _markerTick = Duration.zero;
   int _lastComboBreak = 0;
   late final Future<AssetManifest> _resultAssets;
-
-  bool get _showRoundMarker => _roundMarkerMs > 0;
 
   @override
   void initState() {
@@ -117,33 +112,16 @@ class _BotFightScreenState extends State<BotFightScreen>
     if (_game.soundEnabled) _game.sounds.play(FightCue.comboUnravel);
   }
 
-  void _startNextRound() {
-    _game.pauseEngine();
+  void _rematch() {
     _game.restartMatch();
     _wasFightBeat = false;
-    setState(() {
-      _roundNumber++;
-      _roundMarkerMs = 600;
-      _markerTick = _frame.value;
-    });
-    if (_game.soundEnabled) _game.sounds.play(FightCue.roundSting);
+    _game.resumeEngine();
   }
 
   bool _wasFightBeat = false;
   final MatchClockCues _clockCues = MatchClockCues();
 
   void _onTick(Duration elapsed) {
-    if (_showRoundMarker) {
-      final dt = (elapsed - _markerTick).inMicroseconds / 1000;
-      _markerTick = elapsed;
-      if (!_paused && !_pausedBySystem && !_showControlsHelp) {
-        _roundMarkerMs -= dt;
-        if (!_showRoundMarker) {
-          setState(() => _roundMarkerMs = 0);
-          _game.resumeEngine();
-        }
-      }
-    }
     _frame.value = elapsed;
     // Flame's simulation ticker may run after this screen's ticker. Sample
     // after paint so this cue sees the exact state the chip/arena just drew,
@@ -154,7 +132,6 @@ class _BotFightScreenState extends State<BotFightScreen>
       }
       final match = _game.match;
       if (match.isFinished) _game.stats.finishRound();
-      if (_showRoundMarker) return;
       final fightBeat =
           match.phase == MatchPhase.countdown &&
           match.countdownRemainingMs <= match.rules.countdownMs ~/ 4;
@@ -241,12 +218,11 @@ class _BotFightScreenState extends State<BotFightScreen>
     if (!_paused) {
       return;
     }
-    if (!_showRoundMarker) _game.resumeEngine();
+    _game.resumeEngine();
     setState(() => _paused = false);
   }
 
   void _restartFromPause() {
-    _roundMarkerMs = 0;
     _game.restartMatch();
     _resume();
   }
@@ -292,8 +268,6 @@ class _BotFightScreenState extends State<BotFightScreen>
           child: Stack(
             children: [
               Positioned.fill(child: GameWidget(game: _game)),
-              if (_showRoundMarker)
-                Positioned.fill(child: _RoundMarker(number: _roundNumber)),
               Positioned(
                 top: 12,
                 left: 12,
@@ -307,11 +281,7 @@ class _BotFightScreenState extends State<BotFightScreen>
                 top: 14,
                 left: 72,
                 right: 72,
-                child: _BattleHud(
-                  game: _game,
-                  tick: _frame,
-                  roundIntro: _showRoundMarker,
-                ),
+                child: _BattleHud(game: _game, tick: _frame),
               ),
               Positioned(
                 top: 12,
@@ -353,7 +323,7 @@ class _BotFightScreenState extends State<BotFightScreen>
                       ? _RoundEndCard(
                           game: _game,
                           onLeave: _quitToMenu,
-                          onRematch: _startNextRound,
+                          onRematch: _rematch,
                           assets: _resultAssets,
                         )
                       : const SizedBox.shrink(),
@@ -383,12 +353,7 @@ class _BotFightScreenState extends State<BotFightScreen>
 }
 
 class _BattleHud extends StatelessWidget {
-  const _BattleHud({
-    required this.game,
-    required this.tick,
-    this.roundIntro = false,
-  });
-  final bool roundIntro;
+  const _BattleHud({required this.game, required this.tick});
 
   final InkFightBattleGame game;
 
@@ -424,9 +389,7 @@ class _BattleHud extends StatelessWidget {
             // between hudVersion bumps, so the chip repaints them itself.
             ListenableBuilder(
               listenable: tick,
-              builder: (context, _) => roundIntro
-                  ? const SizedBox(width: 76, height: 32)
-                  : _TimerChip(game: game),
+              builder: (context, _) => _TimerChip(game: game),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -774,60 +737,6 @@ class _ResultFighterArt extends StatelessWidget {
       ),
     );
   }
-}
-
-/// A quiet pre-count stamp occupying only the countdown's own canvas slot.
-/// The engine is held at the start of its countdown until this clears.
-class _RoundMarker extends StatelessWidget {
-  const _RoundMarker({required this.number});
-  final int number;
-
-  @override
-  Widget build(BuildContext context) => IgnorePointer(
-    child: LayoutBuilder(
-      builder: (context, constraints) => Align(
-        alignment: const Alignment(0, -.37),
-        child: SizedBox(
-          width: math
-              .max(100.0, constraints.maxHeight * .24)
-              .clamp(0.0, constraints.maxWidth * .48),
-          height: constraints.maxHeight * .24,
-          child: ColoredBox(
-            color: InkColors.paper,
-            child: TweenAnimationBuilder<double>(
-              key: ValueKey('round-marker-$number'),
-              tween: Tween(begin: 0, end: 1),
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              builder: (context, progress, child) => Opacity(
-                key: const ValueKey('round-marker-opacity'),
-                opacity: progress,
-                child: Transform.scale(
-                  key: const ValueKey('round-marker-scale'),
-                  scale: 1.06 - .06 * progress,
-                  child: child,
-                ),
-              ),
-              child: Center(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    'ROUND $number',
-                    style: const TextStyle(
-                      color: InkColors.ink,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 /// Whole-match player totals, not the final streak or the rival's blocks.

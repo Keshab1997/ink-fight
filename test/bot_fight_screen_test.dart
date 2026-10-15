@@ -165,13 +165,9 @@ void main() {
     await tester.tap(find.text('REMATCH'));
     await tester.pump();
     expect(find.text('REMATCH'), findsNothing);
-    // The round stamp owns its own pre-count beat; no 3/FIGHT underneath.
-    expect(find.text('ROUND 2'), findsOneWidget);
-    expect(find.text('3'), findsNothing);
-    expect(game.match.countdownRemainingMs, game.match.rules.countdownMs);
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(find.text('ROUND 2'), findsNothing);
+    // One match is one round: a rematch starts the normal countdown at once.
     expect(find.text('3'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'ROUND \d+')), findsNothing);
     expect(find.text('100%'), findsNWidgets(2));
     expect(game.match.phase, MatchPhase.countdown);
     // A rematch drops the cinema with the rest of the feel state.
@@ -1535,79 +1531,78 @@ void main() {
     );
   });
 
-  testWidgets(
-    'muted unravel and round marker never catch up when sound returns',
-    (tester) async {
-      final sounds = _RecordingFightSounds();
-      final settings = InkSettings(soundOn: false);
-      final game = await mountFight(tester, settings: settings, sounds: sounds);
-      await tester.tap(find.text('GOT IT'));
-      await tester.pump();
-      pastCountdown(game);
-      game.pauseEngine();
-      for (var i = 0; i < 2; i++) {
-        game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
-      }
-      game.stats.onHit(statEvent(FighterId.player, HitKind.whiff));
-      settings.soundOn = true;
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(sounds.cues, isEmpty);
-      settings.soundOn = false;
-      for (var i = 0; i < 2; i++) {
-        game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
-      }
-      clockTo(game, 0);
-      game.update(.000001);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 180));
-      expect(sounds.cues, isEmpty);
-      await tester.tap(find.text('REMATCH'));
-      await tester.pump();
-      expect(find.text('ROUND 2'), findsOneWidget);
-      expect(sounds.cues, isEmpty);
-      settings.soundOn = true;
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(sounds.cues, isEmpty, reason: 'no late marker sting or unravel');
-    },
-  );
-
-  testWidgets('ROUND 2 and 3 stamp before the held countdown, with one sting', (
+  testWidgets('muted unravel never catches up when sound returns', (
     tester,
   ) async {
     final sounds = _RecordingFightSounds();
-    final game = await mountFight(tester, sounds: sounds);
+    final settings = InkSettings(soundOn: false);
+    final game = await mountFight(tester, settings: settings, sounds: sounds);
     await tester.tap(find.text('GOT IT'));
     await tester.pump();
-    for (var round = 2; round <= 3; round++) {
-      pastCountdown(game);
-      game.pauseEngine();
-      clockTo(game, 0);
-      game.update(.000001);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 180));
-      sounds.cues.clear();
-      await tester.tap(find.text('REMATCH'));
-      await tester.pump();
-      expect(find.text('ROUND $round'), findsOneWidget);
-      expect(find.text('3'), findsNothing);
-      expect(find.text('FIGHT!'), findsNothing);
-      expect(sounds.cues, [FightCue.roundSting]);
-      expect(game.match.countdownRemainingMs, game.match.rules.countdownMs);
-      final stamp = find.byKey(const ValueKey('round-marker-scale'));
-      expect(
-        tester.widget<Transform>(stamp).transform.storage[0],
-        closeTo(1.06, .0001),
-      );
-      await tester.pump(const Duration(milliseconds: 180));
-      expect(tester.widget<Transform>(stamp).transform.storage[0], 1);
-      expect(game.match.countdownRemainingMs, game.match.rules.countdownMs);
-      expect(sounds.cues, [FightCue.roundSting]);
-      await tester.pump(const Duration(milliseconds: 420));
-      expect(find.text('ROUND $round'), findsNothing);
-      expect(find.text('3'), findsOneWidget);
-      expect(find.text('FIGHT!'), findsNothing);
+    pastCountdown(game);
+    game.pauseEngine();
+    for (var i = 0; i < 2; i++) {
+      game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
     }
+    game.stats.onHit(statEvent(FighterId.player, HitKind.whiff));
+    settings.soundOn = true;
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(sounds.cues, isEmpty);
+    settings.soundOn = false;
+    for (var i = 0; i < 2; i++) {
+      game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+    }
+    clockTo(game, 0);
+    game.update(.000001);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(sounds.cues, isEmpty);
+    await tester.tap(find.text('REMATCH'));
+    await tester.pump();
+    expect(find.text('3'), findsOneWidget);
+    expect(sounds.cues, isEmpty);
+    settings.soundOn = true;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      sounds.cues.where(
+        (cue) => cue == FightCue.comboUnravel || cue == FightCue.roundSting,
+      ),
+      isEmpty,
+      reason: 'no late unravel or fabricated round sting; normal countdown blips may play',
+    );
   });
+
+  testWidgets(
+    'rematches start the existing countdown without round stamps or extra sting',
+    (tester) async {
+      final sounds = _RecordingFightSounds();
+      final game = await mountFight(tester, sounds: sounds);
+      await tester.tap(find.text('GOT IT'));
+      await tester.pump();
+      for (var attempt = 0; attempt < 2; attempt++) {
+        pastCountdown(game);
+        game.pauseEngine();
+        clockTo(game, 0);
+        game.update(.000001);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 180));
+        sounds.cues.clear();
+        await tester.tap(find.text('REMATCH'));
+        await tester.pump();
+        expect(find.textContaining(RegExp(r'ROUND \d+')), findsNothing);
+        expect(find.text('3'), findsOneWidget);
+        expect(find.text('FIGHT!'), findsNothing);
+        expect(game.match.phase, MatchPhase.countdown);
+        expect(sounds.cues.where((cue) => cue == FightCue.roundSting), isEmpty);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(
+          game.match.countdownRemainingMs,
+          lessThan(game.match.rules.countdownMs),
+          reason: 'no presentation-only pre-count hold',
+        );
+      }
+    },
+  );
 
   testWidgets('the arena HUD fits 640x360 without overflow', (tester) async {
     final game = await mountFight(tester);
