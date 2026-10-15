@@ -16,6 +16,7 @@ import 'rules/fighter_state.dart';
 import 'rules/input_command.dart';
 import 'rules/match_controller.dart';
 import 'rules/match_rules.dart';
+import 'stats/match_stats.dart';
 
 // ---------------------------------------------------------------------------
 // The feel numbers, all from docs/technical/GAME_FEEL.md — the view holds no
@@ -256,6 +257,8 @@ class InkFightBattleGame extends FlameGame {
   int _lastCountdownBeat = -1;
 
   final ArenaAtmosphere _atmosphere = ArenaAtmosphere();
+  final MatchStats _stats = MatchStats();
+  MatchStats get stats => _stats;
 
   final List<_Burst> _bursts = <_Burst>[];
   final List<_ImpactMark> _marks = <_ImpactMark>[];
@@ -593,6 +596,7 @@ class InkFightBattleGame extends FlameGame {
     _roundEndRevealed = false;
     _lastCountdownBeat = -1;
     _atmosphere.reset();
+    _stats.reset();
     _bursts.clear();
     _marks.clear();
     _shake = null;
@@ -800,6 +804,7 @@ class InkFightBattleGame extends FlameGame {
   void _consumeHitEvents() {
     for (final event in _match.drainHitEvents()) {
       _atmosphere.onHit(event, _match.rules.arenaWidth);
+      stats.onHit(event);
       _fireHaptic(event);
       _fireSound(event);
       switch (event.kind) {
@@ -1223,6 +1228,7 @@ class InkFightBattleGame extends FlameGame {
   @override
   void onRemove() {
     _atmosphere.dispose();
+    _stats.dispose();
     super.onRemove();
   }
 

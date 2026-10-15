@@ -7,6 +7,7 @@ import 'package:inkfight/game/audio/fight_sounds.dart';
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
 import 'package:inkfight/game/rules/input_command.dart';
+import 'package:inkfight/game/rules/match_controller.dart';
 import 'package:inkfight/game/rules/match_rules.dart';
 import 'package:inkfight/screens/bot_fight_screen.dart';
 import 'package:inkfight/state/ink_settings.dart';
@@ -1000,6 +1001,229 @@ void main() {
     await tester.tap(find.byIcon(Icons.pause_rounded));
     await tester.pump(const Duration(milliseconds: 50));
     expect(punchDim(), 1.0);
+  });
+
+  HitEvent statEvent(FighterId attacker, HitKind kind) => HitEvent(
+    attacker: attacker,
+    defender: attacker == FighterId.player ? FighterId.rival : FighterId.player,
+    kind: kind,
+    heavy: false,
+    x: 150,
+    ko: false,
+  );
+
+  testWidgets('combo stamps re-enter, stay above fill and reset at failure', (
+    tester,
+  ) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    game.pauseEngine();
+    game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+    await tester.pump();
+    expect(find.text('1 HITS'), findsNothing);
+    game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+    await tester.pump();
+    expect(find.text('2 HITS'), findsOneWidget);
+    double scale() => tester
+        .widget<Transform>(find.byKey(const ValueKey('combo-scale')))
+        .transform
+        .storage[0];
+    expect(scale(), closeTo(1.06, .0001));
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(scale(), 1);
+    expect(
+      tester.getRect(find.text('2 HITS')).bottom,
+      lessThan(
+        tester.getRect(find.byKey(const ValueKey('health-live-YOU'))).top,
+      ),
+    );
+    game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+    await tester.pump();
+    expect(find.text('3 HITS'), findsOneWidget);
+    expect(scale(), closeTo(1.06, .0001), reason: 'new count re-stamps');
+    // At compact landscape the badge remains inside the existing HUD label.
+    tester.view.physicalSize = const Size(640, 360);
+    tester.view.devicePixelRatio = 1;
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getRect(find.text('3 HITS')).bottom,
+      lessThan(
+        tester.getRect(find.byKey(const ValueKey('health-live-YOU'))).top,
+      ),
+    );
+    game.stats.onHit(statEvent(FighterId.player, HitKind.whiff));
+    await tester.pump();
+    expect(find.text('3 HITS'), findsNothing);
+    game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+    game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+    await tester.pump();
+    expect(find.text('2 HITS'), findsOneWidget);
+    game.stats.onHit(statEvent(FighterId.rival, HitKind.hit));
+    await tester.pump();
+    expect(find.text('2 HITS'), findsNothing);
+    expect(game.stats.maxCombo, 3);
+    game.restartMatch();
+    await tester.pump();
+    expect(game.stats.hitsLanded, 0);
+    expect(game.stats.maxCombo, 0);
+  });
+
+  testWidgets(
+    'real resolved connects reach stats through the single arena drain',
+    (tester) async {
+      final game = await mountFight(tester);
+      pastCountdown(game);
+      landOneJab(game);
+      expect(game.stats.hitsLanded, greaterThanOrEqualTo(1));
+      final hits = game.stats.hitsLanded;
+      game.update(0);
+      expect(
+        game.stats.hitsLanded,
+        hits,
+        reason: 'the hit is not counted twice',
+      );
+    },
+  );
+
+  void clockTo(InkFightBattleGame game, int remainingMs) {
+    for (var i = 0; i < 5000 && game.match.timeRemainingMs > remainingMs; i++) {
+      // Drive only the rules clock so the bot cannot end a clock-only test.
+      game.match.tick(.016);
+    }
+  }
+
+  testWidgets('10-second pulse freezes on pause, 3/2/1 blips replace ticks', (
+    tester,
+  ) async {
+    final sounds = _RecordingFightSounds();
+    final game = await mountFight(tester, sounds: sounds);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    pastCountdown(game);
+    game.pauseEngine();
+    sounds.cues.clear();
+    clockTo(game, 11000);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(sounds.cues, isEmpty);
+    Color plate() =>
+        (tester
+                    .widget<Container>(
+                      find.byKey(const ValueKey('timer-chip-plate')),
+                    )
+                    .decoration!
+                as BoxDecoration)
+            .color!;
+    final normal = plate();
+    for (var second = 10; second >= 1; second--) {
+      clockTo(game, second * 1000);
+      sounds.cues.clear();
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(
+        find.text('00 : ${second.toString().padLeft(2, '0')}'),
+        findsOneWidget,
+      );
+      expect(sounds.cues, [
+        second <= 3 ? FightCue.countdownBlip : FightCue.clockTick,
+      ]);
+      final frozenPlate = plate();
+      expect(frozenPlate, isNot(normal));
+      expect(
+        frozenPlate,
+        isNot(const Color(0xFFC51F3A)),
+        reason: 'restrained tint',
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(plate(), frozenPlate, reason: 'pulse holds sim time while paused');
+      expect(sounds.cues, hasLength(1), reason: 'no repeat or double tick');
+    }
+    clockTo(game, 0);
+    sounds.cues.clear();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(sounds.cues, isEmpty);
+    expect(plate(), normal, reason: 'urgency ends with the fight');
+    game.restartMatch();
+    await tester.pump(const Duration(milliseconds: 1));
+    pastCountdown(game);
+    clockTo(game, 10000);
+    sounds.cues.clear();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(sounds.cues, [
+      FightCue.clockTick,
+    ], reason: 'rematch re-arms clock cues');
+  });
+
+  testWidgets(
+    'muted late-clock ticks and blips are consumed without catch-up',
+    (tester) async {
+      final sounds = _RecordingFightSounds();
+      final settings = InkSettings(soundOn: false);
+      final game = await mountFight(tester, sounds: sounds, settings: settings);
+      await tester.tap(find.text('GOT IT'));
+      await tester.pump();
+      pastCountdown(game);
+      game.pauseEngine();
+      clockTo(game, 10000);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(sounds.cues, isEmpty);
+      settings.soundOn = true;
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(sounds.cues, isEmpty);
+      settings.soundOn = false;
+      clockTo(game, 3000);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(sounds.cues, isEmpty);
+      settings.soundOn = true;
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(sounds.cues, isEmpty);
+    },
+  );
+
+  testWidgets('result row retains whole-match totals and rematch clears them', (
+    tester,
+  ) async {
+    final game = await mountFight(tester);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    pastCountdown(game);
+    game.pauseEngine();
+    game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+    game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+    game.stats.onHit(statEvent(FighterId.player, HitKind.whiff));
+    game.stats.onHit(statEvent(FighterId.player, HitKind.hit));
+    game.stats.onHit(statEvent(FighterId.rival, HitKind.blocked));
+    clockTo(game, 0);
+    game.update(1 / 60);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+    for (final entry in {
+      'HITS LANDED': '3',
+      'BLOCKS': '1',
+      'MAX COMBO': '2',
+    }.entries) {
+      expect(find.text(entry.key), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(ValueKey('result-${entry.key}'))).data,
+        entry.value,
+      );
+    }
+    tester.view.physicalSize = const Size(640, 360);
+    tester.view.devicePixelRatio = 1;
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text('1 HITS'),
+      findsNothing,
+      reason: 'finished HUD has no combo badge',
+    );
+    await tester.tap(find.text('REMATCH'));
+    await tester.pump();
+    expect(
+      [game.stats.hitsLanded, game.stats.blocks, game.stats.maxCombo],
+      [0, 0, 0],
+    );
+    expect(find.text('HITS LANDED'), findsNothing);
   });
 
   testWidgets('the arena HUD fits 640x360 without overflow', (tester) async {

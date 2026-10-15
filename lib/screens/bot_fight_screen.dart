@@ -10,6 +10,7 @@ import '../game/bot/bot_strategy.dart';
 import '../game/ink_fight_battle_game.dart';
 import '../game/rules/input_command.dart';
 import '../game/rules/match_rules.dart';
+import '../game/stats/match_stats.dart';
 import '../state/ink_settings.dart';
 import '../theme/app_theme.dart';
 import '../widgets/virtual_joystick.dart';
@@ -97,6 +98,7 @@ class _BotFightScreenState extends State<BotFightScreen>
   }
 
   bool _wasFightBeat = false;
+  final MatchClockCues _clockCues = MatchClockCues();
 
   void _onTick(Duration elapsed) {
     _frame.value = elapsed;
@@ -118,6 +120,10 @@ class _BotFightScreenState extends State<BotFightScreen>
       // Leaving the beat arms the next rematch. The arena still owns the
       // 3/2/1 blips and the result sting; this screen adds only FIGHT!.
       _wasFightBeat = fightBeat;
+      final clockCue = _clockCues.update(match.phase, match.timeRemainingMs);
+      if (clockCue != null && _game.soundEnabled) {
+        _game.sounds.play(clockCue);
+      }
     });
   }
 
@@ -341,10 +347,14 @@ class _BattleHud extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: _HudHealth(
-                label: 'YOU',
-                value: player.health / rules.health,
-                tick: tick,
+              child: ListenableBuilder(
+                listenable: game.stats,
+                builder: (context, _) => _HudHealth(
+                  label: 'YOU',
+                  value: player.health / rules.health,
+                  tick: tick,
+                  combo: game.match.isFinished ? 0 : game.stats.combo,
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -418,10 +428,22 @@ class _TimerChip extends StatelessWidget {
       final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
       label = '$minutes : $seconds';
     }
+    final urgent =
+        match.phase == MatchPhase.fighting &&
+        match.timeRemainingMs > 0 &&
+        match.timeRemainingMs <= 10000;
+    // Slow, restrained tint, driven by sim time: pauses hold their pulse.
+    // No size/position motion and no full-white flash near the health bars.
+    final pulse =
+        .28 +
+        .12 * math.cos(2 * math.pi * (10000 - match.timeRemainingMs) / 1600);
     return Container(
+      key: const ValueKey('timer-chip-plate'),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: InkColors.ink,
+        color: urgent
+            ? Color.lerp(InkColors.ink, const Color(0xFFC51F3A), pulse)
+            : InkColors.ink,
         borderRadius: BorderRadius.circular(13),
       ),
       child: Opacity(
@@ -502,6 +524,8 @@ class _RoundEndCard extends StatelessWidget {
                 letterSpacing: 1.4,
               ),
             ),
+            const SizedBox(height: 12),
+            _ResultStats(stats: game.stats),
             const SizedBox(height: 16),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -556,6 +580,96 @@ class _RoundEndCard extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Whole-match player totals, not the final streak or the rival's blocks.
+class _ResultStats extends StatelessWidget {
+  const _ResultStats({required this.stats});
+  final MatchStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 252,
+      child: Row(
+        children: [
+          for (final entry in <String, int>{
+            'HITS LANDED': stats.hitsLanded,
+            'BLOCKS': stats.blocks,
+            'MAX COMBO': stats.maxCombo,
+          }.entries)
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${entry.value}',
+                    key: ValueKey('result-${entry.key}'),
+                    style: const TextStyle(
+                      color: InkColors.ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      entry.key,
+                      style: const TextStyle(
+                        color: InkColors.inkSoft,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .6,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small stamp contained in the player's existing label row. It never
+/// floats over the readable fill or enters the fighters' canvas space.
+class _ComboStamp extends StatelessWidget {
+  const _ComboStamp({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      key: ValueKey('combo-$count'),
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      builder: (context, progress, child) => Opacity(
+        key: const ValueKey('combo-opacity'),
+        opacity: progress,
+        child: Transform.scale(
+          key: const ValueKey('combo-scale'),
+          scale: 1.06 - .06 * progress,
+          child: child,
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: const BoxDecoration(color: InkColors.ink),
+        child: Text(
+          '$count HITS',
+          style: const TextStyle(
+            color: InkColors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+            letterSpacing: .5,
+          ),
         ),
       ),
     );
@@ -746,9 +860,11 @@ class _HudHealth extends StatefulWidget {
     required this.label,
     required this.value,
     required this.tick,
+    this.combo = 0,
   });
 
   final String label;
+  final int combo;
   final double value;
   final ValueListenable<Duration> tick;
 
@@ -869,14 +985,26 @@ class _HudHealthState extends State<_HudHealth> {
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    widget.label,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      color: InkColors.inkSoft,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.1,
+                  child: SizedBox(
+                    height: 18,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.label,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            color: InkColors.inkSoft,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        if (widget.combo >= 2) ...[
+                          const SizedBox(width: 6),
+                          _ComboStamp(count: widget.combo),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -909,6 +1037,7 @@ class _HudHealthState extends State<_HudHealth> {
                   // The truth, snapped: a transparent track so the trail
                   // shows through the segment that just went missing.
                   LinearProgressIndicator(
+                    key: ValueKey('health-live-${widget.label}'),
                     value: widget.value,
                     backgroundColor: Colors.transparent,
                     color: InkColors.ink,
