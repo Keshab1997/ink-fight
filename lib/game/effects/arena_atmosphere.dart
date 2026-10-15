@@ -8,6 +8,7 @@ import '../rules/fighter_state.dart';
 import '../rules/match_controller.dart';
 import '../rules/match_rules.dart';
 import 'arena_physical_paint.dart';
+import 'arena_footwork.dart';
 import 'arena_room.dart';
 
 /// Paint only: the paper remembers connects, never guesses them from a pose.
@@ -31,6 +32,9 @@ class ArenaAtmosphere {
   // Recorded once, not randomised in render or update. Unit coordinates keep
   // the same fibres pinned to the page even when the viewport is resized.
   ui.Picture? _grain;
+  final ArenaFootwork _footwork = ArenaFootwork();
+  final List<_FloorDot> _footDots = [];
+  final List<_FloorDot> _scars = [];
   final ArenaRoom _room = ArenaRoom();
   final ArenaPhysicalPaint _physical = ArenaPhysicalPaint();
   final math.Random _random = math.Random(71);
@@ -84,7 +88,8 @@ class ArenaAtmosphere {
   /// the same place on the paper. Only confirmed hits flash the defender.
   void onHit(HitEvent event, double arenaWidth) {
     _physical.onHit(event, arenaWidth);
-    _room.onHit(event);
+    _room.onHit(event, arenaWidth: arenaWidth);
+    _footwork.onHit(event);
     if (event.kind == HitKind.whiff) {
       return;
     }
@@ -129,12 +134,13 @@ class ArenaAtmosphere {
     for (final id in FighterId.values) {
       _flash[id] = math.max(0.0, (_flash[id] ?? 0) - ms);
     }
-    for (final dot in _dots) {
+    for (final dot in _dots.followedBy(_footDots)) {
       if (dot.retiring) {
         dot.fadeMs += ms;
       }
     }
     _dots.removeWhere((dot) => dot.fadeMs >= dot.fadeLifeMs);
+    _footDots.removeWhere((dot) => dot.fadeMs >= dot.fadeLifeMs);
   }
 
   /// Air follows the view clock; a boundary response is only presentation.
@@ -145,8 +151,46 @@ class ArenaAtmosphere {
     required FighterState player,
     required FighterState rival,
     required MatchRules rules,
+    SpriteAnimationComponent? playerSprite,
+    SpriteAnimationComponent? rivalSprite,
+    double viewportWidth = 0,
+    double movementDt = 0,
   }) {
     _room.advanceAir(realDt: realDt, effectDt: effectDt, roundEnd: roundEnd);
+    void plant(FootPlant plant) {
+      if (plant.scar) {
+        if (_scars.length < 2) {
+          _scars.add(
+            _FloorDot(
+              xShare: plant.xShare,
+              dxShare: 0,
+              dyShare: 0,
+              radiusShare: 0,
+              colour: _grey,
+              opacity: .12,
+              scarFacing: plant.facing,
+            ),
+          );
+        }
+      } else {
+        if (_footDots.length == 16) _footDots.removeAt(0);
+        _footDots.add(
+          _FloorDot(
+            xShare: plant.xShare,
+            dxShare: plant.offsetShare,
+            dyShare: 0,
+            radiusShare: plant.hard ? .013 : .007,
+            colour: _grey,
+            opacity: plant.hard ? .30 : .20,
+            widthShare: plant.hard ? .10 : .055,
+            fadeLifeMs: 1000,
+          )..retiring = true,
+        );
+      }
+    }
+
+    _footwork.observe(player, playerSprite, viewportWidth, movementDt, plant);
+    _footwork.observe(rival, rivalSprite, viewportWidth, movementDt, plant);
     _room.observeWalls(player, rival, rules, (fighter) {
       if (_dots.length == maxMarks) _dots.removeAt(0);
       _dots.add(
@@ -199,16 +243,20 @@ class ArenaAtmosphere {
     }
     canvas.save();
     canvas.clipRect(ui.Offset.zero & viewport);
-    for (final dot in _dots) {
+    for (final dot in _dots.followedBy(_footDots).followedBy(_scars)) {
+      if (dot.scarFacing != null) {
+        _renderScar(canvas, dot, viewport.width, floorY, fighterHeight);
+        continue;
+      }
       canvas.drawOval(
         ui.Rect.fromCenter(
           center: ui.Offset(
             dot.xShare * viewport.width + dot.dxShare * fighterHeight,
             floorY + dot.dyShare * fighterHeight,
           ),
-          width: dot.smear
-              ? fighterHeight * .12
-              : dot.radiusShare * fighterHeight * 2,
+          width:
+              fighterHeight *
+              (dot.widthShare ?? (dot.smear ? .12 : dot.radiusShare * 2)),
           height: dot.radiusShare * fighterHeight * 1.1,
         ),
         ui.Paint()
@@ -216,6 +264,44 @@ class ArenaAtmosphere {
             alpha:
                 dot.opacity * (1 - dot.fadeMs / dot.fadeLifeMs).clamp(0.0, 1.0),
           ),
+      );
+    }
+    canvas.restore();
+  }
+
+  void _renderScar(
+    ui.Canvas canvas,
+    _FloorDot dot,
+    double width,
+    double floor,
+    double h,
+  ) {
+    canvas.save();
+    canvas.translate(dot.xShare * width, floor);
+    canvas.scale(dot.scarFacing!, 1);
+    final ink = ui.Paint()..color = dot.colour.withValues(alpha: dot.opacity);
+    canvas.drawOval(
+      ui.Rect.fromCenter(
+        center: ui.Offset.zero,
+        width: h * .14,
+        height: h * .027,
+      ),
+      ink,
+    );
+    canvas.drawCircle(ui.Offset(-h * .095, -h * .005), h * .014, ink);
+    ink
+      ..strokeWidth = h * .003
+      ..strokeCap = ui.StrokeCap.round;
+    for (final side in [-1.0, 1.0]) {
+      canvas.drawLine(
+        ui.Offset(-h * .03, 0),
+        ui.Offset(-h * .065, side * h * .023),
+        ink,
+      );
+      canvas.drawLine(
+        ui.Offset(h * .045, 0),
+        ui.Offset(h * .12, side * h * .025),
+        ink,
       );
     }
     canvas.restore();
@@ -275,6 +361,11 @@ class ArenaAtmosphere {
     _physical.renderBehindFighters(canvas, player, rival);
     final playerFilter = player?.paint.colorFilter;
     final rivalFilter = rival?.paint.colorFilter;
+    final rearDecorator = rival?.decorator;
+    if (rival != null && player != null && !_isFlashing(FighterId.rival)) {
+      final depth = overlapDepth(rival, player);
+      if (depth != null) rival.decorator = depth;
+    }
     if (player != null && _isFlashing(FighterId.player)) {
       player.paint.colorFilter = _whiteSilhouette;
     }
@@ -286,6 +377,9 @@ class ArenaAtmosphere {
     } finally {
       player?.paint.colorFilter = playerFilter;
       rival?.paint.colorFilter = rivalFilter;
+      if (rival != null && rearDecorator != null) {
+        rival.decorator = rearDecorator;
+      }
     }
   }
 
@@ -299,6 +393,9 @@ class ArenaAtmosphere {
   void reset() {
     _physical.reset();
     _room.reset();
+    _footwork.reset();
+    _footDots.clear();
+    _scars.clear();
     _dots.clear();
     _flash.clear();
   }
@@ -307,6 +404,12 @@ class ArenaAtmosphere {
   bool isFlashing(FighterId id) => _isFlashing(id);
 
   bool _isFlashing(FighterId id) => (_flash[id] ?? 0) > 0;
+
+  @visibleForTesting
+  int get footScuffCount => _footDots.length;
+
+  @visibleForTesting
+  int get scarCount => _scars.length;
 
   @visibleForTesting
   int get markCount => _dots.length;
@@ -327,6 +430,8 @@ class _FloorDot {
     required this.colour,
     required this.opacity,
     this.smear = false,
+    this.widthShare,
+    this.scarFacing,
     this.fadeLifeMs = ArenaAtmosphere._retireMs,
   });
 
@@ -337,6 +442,8 @@ class _FloorDot {
   final ui.Color colour;
   final double opacity;
   final bool smear;
+  final double? widthShare;
+  final double? scarFacing;
   final double fadeLifeMs;
   bool retiring = false;
   double fadeMs = 0;

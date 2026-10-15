@@ -25,10 +25,15 @@ class ArenaRoom {
   double _shakeAgeMs = _shakeMs;
   double _shakeDirection = 1;
   double _settleSeconds = 0;
+  double? _impactXShare;
+  double _impactYShare = .43;
 
-  void onHit(HitEvent event) {
+  void onHit(HitEvent event, {double? arenaWidth}) {
     if (event.kind == HitKind.hit && event.heavy) {
       _gustRemainingMs = _gustMs;
+      _impactXShare = arenaWidth != null && arenaWidth > 0
+          ? (event.x / arenaWidth).clamp(0.0, 1.0)
+          : null;
     }
   }
 
@@ -61,10 +66,21 @@ class ArenaRoom {
         );
       } else {
         // Wrap rather than respawn/re-randomise: the same eight motes persist.
-        _dust[i] = ui.Offset(
+        var moved = ui.Offset(
           (p.dx + vx * driftTime) % 1,
           (p.dy + .0015 * driftTime) % 1,
         );
+        final targetX = _impactXShare;
+        if (targetX != null && boostedTime > 0) {
+          final delta = ui.Offset(targetX, _impactYShare) - moved;
+          final distance = delta.distance;
+          // A bounded tug, not a teleport: at most .008 page shares across
+          // the whole 200 ms gust, and scaled by the KO's existing clock.
+          if (distance > 0) {
+            moved += delta * (math.min(distance, boostedTime * .04) / distance);
+          }
+        }
+        _dust[i] = moved;
       }
     }
     _settleSeconds = roundEnd ? _settleSeconds + real : 0;
@@ -159,6 +175,7 @@ class ArenaRoom {
     if (viewport.isEmpty || h <= 0) return;
     final top = math.max(viewport.height * .30, floorY - h * .75);
     if (top >= floorY) return;
+    _impactYShare = ((floorY - h * .43 - top) / (floorY - top)).clamp(0.0, 1.0);
     canvas.save();
     canvas.clipRect(ui.Rect.fromLTRB(0, top, viewport.width, floorY + h * .01));
     for (var i = 0; i < _dust.length; i++) {
@@ -191,6 +208,8 @@ class ArenaRoom {
     _gustRemainingMs = 0;
     _shakeAgeMs = _shakeMs;
     _settleSeconds = 0;
+    _impactXShare = null;
+    _impactYShare = .43;
   }
 
   @visibleForTesting

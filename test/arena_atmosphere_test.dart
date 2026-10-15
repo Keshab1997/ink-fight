@@ -6,6 +6,7 @@ import 'package:flame/components.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/effects/arena_atmosphere.dart';
+import 'package:inkfight/game/effects/arena_footwork.dart';
 import 'package:inkfight/game/effects/arena_physical_paint.dart';
 import 'package:inkfight/game/effects/arena_room.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
@@ -834,5 +835,317 @@ void main() {
       }
       expect(count, greaterThan(0));
     });
+  });
+
+  group('the floor remembers footwork', () {
+    const player = FighterState(
+      id: FighterId.player,
+      x: 110,
+      health: 100,
+      facing: 1,
+    );
+    const rival = FighterState(
+      id: FighterId.rival,
+      x: 190,
+      health: 100,
+      facing: -1,
+    );
+
+    Future<SpriteAnimationComponent> sole() async {
+      final image = await raster(
+        (c) => c.drawRect(
+          const ui.Rect.fromLTWH(60, 10, 80, 185),
+          ui.Paint()..color = const ui.Color(0xFFFFFFFF),
+        ),
+      );
+      addTearDown(image.dispose);
+      final sprite = Sprite(image, srcSize: Vector2.all(200));
+      return SpriteAnimationComponent(
+        size: Vector2.all(_height),
+        anchor: Anchor.bottomCenter,
+        animation: SpriteAnimation.spriteList(
+          List.filled(8, sprite),
+          stepTime: .1,
+          loop: true,
+        ),
+      )..position = Vector2(480, _floor + _height * .121);
+    }
+
+    void observe(
+      ArenaAtmosphere fx,
+      SpriteAnimationComponent sprite,
+      FighterState state, {
+      double dt = .016,
+    }) {
+      fx.advanceRoom(
+        realDt: dt,
+        effectDt: dt,
+        roundEnd: false,
+        player: state,
+        rival: rival,
+        rules: MatchRules.standard,
+        playerSprite: sprite,
+        viewportWidth: 960,
+        movementDt: dt,
+      );
+    }
+
+    test('scuffs follow planted frame phases, never a frozen pose or walking into a wall; cap 16', () async {
+      final fx = atmosphere(), sprite = await sole();
+      observe(fx, sprite, player);
+      final walk = player.copyWith(action: FighterAction.walk, x: 111);
+      observe(fx, sprite, walk);
+      expect(fx.footScuffCount, 1);
+      sprite.animationTicker!.currentIndex = 4;
+      observe(
+        fx,
+        sprite,
+        walk,
+      ); // no rules movement, even if the walk pose changes
+      expect(fx.footScuffCount, 1);
+      sprite.animationTicker!.currentIndex = 0;
+      observe(fx, sprite, walk.copyWith(x: 112), dt: 0);
+      expect(fx.footScuffCount, 1);
+      observe(fx, sprite, walk.copyWith(x: 112));
+      expect(fx.footScuffCount, 2);
+      for (var i = 0; i < 40; i++) {
+        sprite.animationTicker!.currentIndex = i.isEven ? 4 : 0;
+        observe(fx, sprite, walk.copyWith(x: 113.0 + i));
+      }
+      expect(fx.footScuffCount, 16);
+      fx.update(.5);
+      expect(fx.footScuffCount, 16);
+      fx.update(.501);
+      expect(fx.footScuffCount, 0);
+      fx.reset();
+      observe(fx, sprite, walk);
+      expect(fx.footScuffCount, 0, reason: 'first snapshot is not a footstep');
+    });
+
+    test(
+      'jump and knockdown land once; interrupted jumps never invent a landing',
+      () async {
+        final fx = atmosphere(), sprite = await sole();
+        observe(fx, sprite, player.copyWith(action: FighterAction.jump));
+        observe(fx, sprite, player.copyWith(action: FighterAction.hitstun));
+        expect(fx.footScuffCount, 0);
+        observe(fx, sprite, player.copyWith(action: FighterAction.jump));
+        observe(fx, sprite, player);
+        observe(fx, sprite, player);
+        expect(fx.footScuffCount, 1);
+        observe(fx, sprite, player.copyWith(action: FighterAction.knockdown));
+        observe(fx, sprite, player);
+        expect(fx.footScuffCount, 2);
+        expect(
+          fx.scarCount,
+          0,
+          reason: 'a pose alone is never a confirmed knockdown event',
+        );
+        fx.reset();
+        expect(fx.footScuffCount, 0);
+      },
+    );
+
+    test('confirmed knockdown leaves a bounded body scar at fall completion, only two per match', () async {
+      final fx = atmosphere(), sprite = await sole();
+      const event = HitEvent(
+        attacker: FighterId.rival,
+        defender: FighterId.player,
+        kind: HitKind.hit,
+        heavy: true,
+        x: 150,
+        ko: false,
+        knockdown: true,
+      );
+      observe(fx, sprite, player);
+      final fallen = player.copyWith(action: FighterAction.knockdown);
+      fx.onHit(event, 300);
+      observe(fx, sprite, fallen);
+      expect(
+        fx.scarCount,
+        0,
+        reason: 'do not stamp the floor while the body is still falling',
+      );
+      sprite.animationTicker!.setToLast();
+      // Looping test cycle is not done: transition out of knockdown supplies
+      // the same authoritative landing fallback used on a low-frame-rate device.
+      observe(fx, sprite, player);
+      expect(fx.scarCount, 1);
+      fx.update(120);
+      expect(fx.scarCount, 1, reason: 'outlives ordinary fading effects');
+      for (var i = 0; i < 5; i++) {
+        fx.onHit(event, 300);
+        observe(fx, sprite, fallen);
+        observe(fx, sprite, player);
+      }
+      expect(fx.scarCount, 2);
+      fx.update(120);
+      final bytes = await pixels(
+        (c) => fx.renderFloor(c, _viewport, _floor, _height),
+      );
+      var marked = 0;
+      for (var y = 0; y < 540; y++) {
+        for (var x = 0; x < 960; x++) {
+          if (bytes[(y * 960 + x) * 4 + 3] == 0) continue;
+          marked++;
+          expect((x - sprite.position.x).abs(), lessThan(_height * .15));
+          expect((y - _floor).abs(), lessThan(_height * .15));
+        }
+      }
+      expect(marked, greaterThan(0));
+      fx.reset();
+      expect(fx.scarCount, 0);
+    });
+
+    test('overlap shades only rear alpha, front stays pristine; render restores decorators', () async {
+      final fx = atmosphere();
+      final rear = await sole(), front = await sole();
+      rear.position.x = 500;
+      front.position.x = 410;
+      final original = rear.decorator;
+      void pair(ui.Canvas c) {
+        rear.renderTree(c);
+        front.renderTree(c);
+      }
+
+      final baseline = await pixels(pair);
+      final beforeFrame = rear.animationTicker!.currentIndex;
+      final shaded = await pixels(
+        (c) => fx.renderFighters(c, pair, front, rear),
+      );
+      expect(rear.decorator, same(original));
+      expect(rear.animationTicker!.currentIndex, beforeFrame);
+      var changed = 0;
+      final frontOnly = await pixels(front.renderTree);
+      for (var i = 0; i < baseline.length; i += 4) {
+        expect(
+          shaded[i + 3],
+          baseline[i + 3],
+          reason: 'never add ink outside rear alpha',
+        );
+        if (frontOnly[i + 3] == 255) expect(shaded[i], baseline[i]);
+        if (shaded[i] != baseline[i]) {
+          changed++;
+          expect(shaded[i], lessThan(baseline[i]));
+        }
+      }
+      expect(changed, greaterThan(0));
+      front.position.x = 50;
+      expect(overlapDepth(rear, front), isNull);
+      front.position.x = 410;
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      expect(
+        () => fx.renderFighters(
+          canvas,
+          (_) => throw StateError('render'),
+          front,
+          rear,
+        ),
+        throwsStateError,
+      );
+      expect(rear.decorator, same(original));
+      recorder.endRecording().dispose();
+    });
+
+    test('actual close-range render preserves children order, poses and match state', () async {
+      const passive = BotProfile(
+        difficulty: BotDifficulty.easy,
+        thinkIntervalMs: 60000,
+        reactionMs: 60000,
+        attackCooldownMs: 60000,
+        blockChance: 0,
+        heavyChance: 0,
+        hesitationChance: 1,
+        recoveryMs: 0,
+        preferredGap: 90,
+      );
+      final game = InkFightBattleGame(botProfile: passive);
+      game.hapticsEnabled = false;
+      game.onGameResize(Vector2(960, 540));
+      await game.onLoad();
+      await game.ready();
+      for (var i = 0; i < 130; i++) {
+        game.update(1 / 60);
+      }
+      game.setPlayerMoving(true);
+      for (var i = 0; i < 55; i++) {
+        game.update(1 / 60);
+      }
+      game.setPlayerMoving(false);
+      final children = game.children.toList();
+      final p = game.match.player, r = game.match.rival;
+      final clock = game.match.timeRemainingMs;
+      final image = await raster(game.render);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      Directory('.agent-screens').createSync(recursive: true);
+      File('.agent-screens/footwork-overlap.png')
+          .writeAsBytesSync(data!.buffer.asUint8List());
+      image.dispose();
+      expect(game.children.toList(), children);
+      expect(game.match.player, same(p));
+      expect(game.match.rival, same(r));
+      expect(game.match.timeRemainingMs, clock);
+      game.match.submit(
+        const InputCommand(
+          fighter: FighterId.rival,
+          action: InputAction.heavyKick,
+          sequence: 1,
+        ),
+      );
+      game.sendPlayerAction(InputAction.heavyKick);
+      var knockedDown = false;
+      for (var i = 0; i < 150; i++) {
+        game.update(1 / 60);
+        knockedDown = knockedDown || game.match.rival.isKnockedDown;
+      }
+      expect(
+        knockedDown,
+        isTrue,
+        reason: 'real counter-hit event, not a paint-invented scar',
+      );
+      final scarImage = await raster(game.render);
+      final scarData = await scarImage.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      File('.agent-screens/knockdown-scar-arena.png')
+          .writeAsBytesSync(scarData!.buffer.asUint8List());
+      scarImage.dispose();
+    });
+  });
+
+  test('heavy dust pull approaches the hit point for 200 ms, then returns to free drift', () {
+    final free = ArenaRoom(), pulled = ArenaRoom();
+    final initial = free.dustPositions;
+    final target = const ui.Offset(.5, .43);
+    pulled.onHit(hit(heavy: true), arenaWidth: 300);
+    free.onHit(hit(heavy: true)); // same speed gust, no attraction target
+    free.advanceAir(realDt: .2, effectDt: .2, roundEnd: false);
+    pulled.advanceAir(realDt: .2, effectDt: .2, roundEnd: false);
+    for (var i = 0; i < 8; i++) {
+      expect(
+        (pulled.dustPositions[i] - target).distance,
+        lessThan((free.dustPositions[i] - target).distance),
+      );
+      expect(
+        (pulled.dustPositions[i] - free.dustPositions[i]).distance,
+        lessThanOrEqualTo(.0080001),
+      );
+    }
+    final a = free.dustPositions, b = pulled.dustPositions;
+    free.advanceAir(realDt: .1, effectDt: .1, roundEnd: false);
+    pulled.advanceAir(realDt: .1, effectDt: .1, roundEnd: false);
+    for (var i = 0; i < 8; i++) {
+      expect(
+        (pulled.dustPositions[i] - b[i]).dx,
+        closeTo((free.dustPositions[i] - a[i]).dx, 1e-10),
+      );
+      expect(
+        (pulled.dustPositions[i] - b[i]).dy,
+        closeTo((free.dustPositions[i] - a[i]).dy, 1e-10),
+      );
+    }
+    pulled.reset();
+    expect(pulled.dustPositions, initial);
   });
 }
