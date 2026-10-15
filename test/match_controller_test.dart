@@ -853,7 +853,13 @@ void main() {
     skipCountdown(idle);
     closeIn(idle);
     press(idle, FighterId.player, InputAction.lightPunch, 1);
-    run(idle, idle.rules.lightAttack.totalMs);
+    // Only the active window, not the attacker's whole move: 220 ms of hitstun
+    // is over long before the jab's 350 ms recovery is, so running the full
+    // move would find a recovered fighter and prove nothing.
+    run(
+      idle,
+      idle.rules.lightAttack.startupMs + idle.rules.lightAttack.activeMs,
+    );
     expect(idle.rival.action, FighterAction.hitstun);
 
     // A jab into a fighter that is itself attacking: still hitstun, because
@@ -863,7 +869,10 @@ void main() {
     closeIn(trading);
     press(trading, FighterId.player, InputAction.lightPunch, 1);
     press(trading, FighterId.rival, InputAction.lightPunch, 1);
-    run(trading, trading.rules.lightAttack.totalMs);
+    run(
+      trading,
+      trading.rules.lightAttack.startupMs + trading.rules.lightAttack.activeMs,
+    );
     expect(trading.rival.action, FighterAction.hitstun);
     expect(trading.drainHitEvents().where((event) => event.knockdown), isEmpty);
   });

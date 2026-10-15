@@ -1,3 +1,4 @@
+import 'package:flame/flame.dart';
 import 'package:flame/game.dart' hide Route;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,6 +45,18 @@ class _RouteRecorder extends NavigatorObserver {
 }
 
 void main() {
+  setUp(() {
+    // The decoded-frame cache is global and keyed by asset path, and a test
+    // that leaves the arena while its sprites are still decoding leaves a
+    // half-finished future in it — born in *that* test's async zone, which is
+    // dead by the time the next test runs. Awaiting the same key then never
+    // completes, so whichever test loads the fight next hangs instead of
+    // failing. Clearing before each test keeps every mount decoding its own
+    // frames. (Cost us a ten-minute CI timeout to find.)
+    Flame.images.clearCache();
+    Flame.assets.clearCache();
+  });
+
   testWidgets('shows the INK FIGHT landscape menu', (tester) async {
     await tester.pumpWidget(InkFightApp(settings: InkSettings()));
 
@@ -177,15 +190,25 @@ void main() {
   testWidgets('the sound switch flips without leaving the screen', (
     tester,
   ) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    final settings = InkSettings();
+    await tester.pumpWidget(InkFightApp(settings: settings));
     await tester.tap(find.text('SETTINGS'));
     await tester.pumpAndSettle();
 
-    expect(find.text('ON'), findsOneWidget);
-    await tester.tap(find.byType(Switch));
+    // SOUND and HAPTICS are both real switches now, so the text alone cannot
+    // tell them apart: flip the sound row and ask the model.
+    expect(settings.soundOn, isTrue);
+    expect(find.text('ON'), findsNWidgets(2));
+    await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
 
-    expect(find.text('OFF'), findsOneWidget);
+    expect(settings.soundOn, isFalse);
+    expect(
+      find.text('OFF'),
+      findsOneWidget,
+      reason: 'only the sound row flipped',
+    );
+    expect(find.text('ON'), findsOneWidget, reason: 'haptics still on');
     expect(find.byType(SettingsScreen), findsOneWidget);
   });
 

@@ -68,8 +68,10 @@ void main() {
     await tester.pumpWidget(InkFightApp(settings: InkSettings()));
 
     await tester.tap(find.text('BOT FIGHT'));
-    // 100 ms into the 300 ms route: the wipe is mid-flight, neither at its
-    // start nor landed.
+    // The push is built by the first frame; only then does the incoming
+    // route's transition exist to be measured. The second pump puts the
+    // clock 100 ms into the 300 ms route: mid-flight, neither end.
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
     // Both routes wear the wipe (the menu settles underneath while the
