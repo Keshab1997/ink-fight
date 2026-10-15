@@ -9,6 +9,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import 'audio/fight_sounds.dart';
 import 'bot/bot_strategy.dart';
 import 'rules/fighter_state.dart';
 import 'rules/input_command.dart';
@@ -163,8 +164,18 @@ const double _kPunchHeavyMs = 160;
 class InkFightBattleGame extends FlameGame {
   /// Normal is the default opponent: GDD §8, and the flat-feeling `easy`
   /// default was part of the problem (GAME_FEEL §7).
-  InkFightBattleGame({BotProfile botProfile = BotProfile.normal})
-    : _bot = BotController(profile: botProfile, fighter: FighterId.rival);
+  ///
+  /// [sounds] is the audio seam (`audio/fight_sounds.dart`): the silent
+  /// default keeps every test and the debug path quiet, and the fight screen
+  /// hands in the real one.
+  InkFightBattleGame({
+    BotProfile botProfile = BotProfile.normal,
+    this.sounds = const SilentFightSounds(),
+  }) : _bot = BotController(profile: botProfile, fighter: FighterId.rival);
+
+  /// What the fight plays its cues through; every cue goes via [_play], so
+  /// [soundEnabled] mutes the whole fight in one flag.
+  final FightSounds sounds;
 
   /// The match this arena displays; read-only for HUD and tests.
   MatchController get match => _match;
@@ -182,10 +193,13 @@ class InkFightBattleGame extends FlameGame {
   /// can listen instead of rebuilding every frame.
   final ValueNotifier<int> hudVersion = ValueNotifier(0);
 
-  /// Haptic cues on connects, on by default. The seam the settings screen
-  /// will flip once audio and haptics become independent settings — the
-  /// arena reads it, the screen will own it.
+  /// Haptic cues on connects, on by default. The settings screen keeps it on
+  /// its HAPTICS switch; the arena only reads it.
   bool hapticsEnabled = true;
+
+  /// Sound cues for the fight, on by default. The settings screen keeps it
+  /// on its SOUND switch, exactly like [hapticsEnabled] follows HAPTICS.
+  bool soundEnabled = true;
 
   /// Diagnostic hitbox overlay, off by default: pushboxes, attack reaches
   /// and the live active window, drawn from the rules (ROADMAP Phase 0).
@@ -221,6 +235,10 @@ class InkFightBattleGame extends FlameGame {
   double _koAnimMs = 0;
   bool _koCinematicStarted = false;
   bool _roundEndRevealed = false;
+
+  /// The countdown beat whose blip has already played — -1 until the first
+  /// frame of a round, so a fresh countdown always starts on its "3".
+  int _lastCountdownBeat = -1;
 
   final List<_Burst> _bursts = <_Burst>[];
   final List<_ImpactMark> _marks = <_ImpactMark>[];
@@ -302,6 +320,12 @@ class InkFightBattleGame extends FlameGame {
   Future<void> onLoad() async {
     await super.onLoad();
     images.prefix = '';
+
+    // Behind the loading state, never in `update`: the nine cues are on disk
+    // before the first swing, so the round's first hit is the sound and not
+    // a first-decode hitch (GAME_FEEL §4). The seam promises this cannot
+    // throw, so a platform without audio still loads a playable fight.
+    await sounds.warmUp();
 
     final frames = await _runtimeFrames();
     _playerAnims = await _buildAnims(
@@ -512,6 +536,7 @@ class InkFightBattleGame extends FlameGame {
     _koAnimMs = 0;
     _koCinematicStarted = false;
     _roundEndRevealed = false;
+    _lastCountdownBeat = -1;
     _bursts.clear();
     _marks.clear();
     _shake = null;
@@ -588,6 +613,7 @@ class InkFightBattleGame extends FlameGame {
       _match.tick(simDt);
       _consumeHitEvents();
       _syncFromMatch();
+      _updateCountdownSound();
       // The simulation runs before the sprite tickers so a swing's animation
       // starts on the same frame its action does — that is what puts the
       // contact frame on screen inside the active window (§1).
@@ -601,11 +627,46 @@ class InkFightBattleGame extends FlameGame {
     _updateEffects(fxDt);
   }
 
+  /// §4/§5: the countdown blips once per counting beat — 3 · 2 · 1 — and the
+  /// FIGHT! beat stays silent (the asset's note: it plays three times).
+  /// Tracking the beat, not the frame, is what keeps it one cue per beat.
+  void _updateCountdownSound() {
+    final beat = _match.phase == MatchPhase.countdown
+        ? _countdownBeatOf(_match.countdownRemainingMs)
+        : -1;
+    if (beat == _lastCountdownBeat) {
+      return;
+    }
+    _lastCountdownBeat = beat;
+    if (beat >= 0 && beat < 3) {
+      _play(FightCue.countdownBlip);
+    }
+  }
+
+  /// The beat behind the drawn label — 0 = "3", 1 = "2", 2 = "1", 3 =
+  /// "FIGHT!" — shared with `_renderCountdown` so the blip and the number
+  /// always change on the same frame.
+  static int _countdownBeatOf(int remainingMs) {
+    if (remainingMs > 1500) {
+      return 0;
+    }
+    if (remainingMs > 1000) {
+      return 1;
+    }
+    if (remainingMs > 500) {
+      return 2;
+    }
+    return 3;
+  }
+
+  /// The round's result stamping in: the sting plays once, on the same guard
+  /// that lets the card stamp in.
   void _revealRoundEnd() {
     if (_roundEndRevealed) {
       return;
     }
     _roundEndRevealed = true;
+    _play(FightCue.roundSting);
     hudVersion.value++;
   }
 
@@ -628,12 +689,53 @@ class InkFightBattleGame extends FlameGame {
     }
   }
 
+  /// The one gate every cue passes: nothing reaches [sounds] while the
+  /// settings screen's SOUND switch is off.
+  void _play(FightCue cue) {
+    if (!soundEnabled) {
+      return;
+    }
+    sounds.play(cue);
+  }
+
+  /// The whoosh a swing carries at its start — light or heavy, and only for
+  /// the two attack actions, so walking into a guard stays silent.
+  void _playSwing(FighterAction action) {
+    if (action == FighterAction.lightPunch) {
+      _play(FightCue.whooshLight);
+    } else if (action == FighterAction.heavyKick) {
+      _play(FightCue.whooshHeavy);
+    }
+  }
+
+  /// Fires the one impact cue [event] carries: the tick on a light connect,
+  /// the thud on a heavy one, the clack on a guard, the gong on the KO blow
+  /// — and nothing on a whiff, whose whoosh already played when the swing
+  /// started (§4). One cue per event, never per frame.
+  void _fireSound(HitEvent event) {
+    switch (event.kind) {
+      case HitKind.whiff:
+        break;
+      case HitKind.blocked:
+        _play(FightCue.blocked);
+      case HitKind.hit:
+        if (event.ko) {
+          _play(FightCue.koGong);
+        } else if (event.heavy) {
+          _play(FightCue.hitHeavy);
+        } else {
+          _play(FightCue.hitLight);
+        }
+    }
+  }
+
   /// Turns every swing the controller resolved since the last frame into
   /// feel: the stop, the ink, the shake — and the KO cinematic when the blow
   /// ended the match.
   void _consumeHitEvents() {
     for (final event in _match.drainHitEvents()) {
       _fireHaptic(event);
+      _fireSound(event);
       switch (event.kind) {
         case HitKind.whiff:
           // Air gets no stop and no shake — but the miss still reads: an
@@ -922,6 +1024,12 @@ class InkFightBattleGame extends FlameGame {
   ) {
     final prevAction = _prevAction[state.id];
     _prevAction[state.id] = state.action;
+    // The swing's own sound, cued off the action *transition*: every swing
+    // gets its whoosh, whether it whiffs or lands (§4, "attack start"), and
+    // a snap (restart, resize) never reads as a swing.
+    if (!snap && prevAction != state.action) {
+      _playSwing(state.action);
+    }
 
     final rules = _match.rules;
     final targetX = state.x / rules.arenaWidth * size.x;
@@ -998,6 +1106,7 @@ class InkFightBattleGame extends FlameGame {
         state.action == FighterAction.idle) {
       _landingSquashMs[state.id] = _kLandingSquashMs;
       _spawnLandingPuff(state);
+      _play(FightCue.stepTap);
     }
     final squashMs = _landingSquashMs[state.id] ?? 0;
     // The anchor is the bottom centre, so squashing scale.y keeps the soles
@@ -1321,13 +1430,12 @@ class InkFightBattleGame extends FlameGame {
     if (remaining <= 0) {
       return;
     }
-    final label = remaining > 1500
-        ? '3'
-        : remaining > 1000
-        ? '2'
-        : remaining > 500
-        ? '1'
-        : 'FIGHT!';
+    final label = switch (_countdownBeatOf(remaining)) {
+      0 => '3',
+      1 => '2',
+      2 => '1',
+      _ => 'FIGHT!',
+    };
     final beatMs = _match.rules.countdownMs / 4;
     final elapsed = _match.rules.countdownMs - remaining;
     final progress = (elapsed % beatMs) / beatMs;

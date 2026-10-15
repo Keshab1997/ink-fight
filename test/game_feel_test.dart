@@ -2,6 +2,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:inkfight/game/audio/fight_sounds.dart';
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
 import 'package:inkfight/game/rules/fighter_state.dart';
@@ -14,6 +15,24 @@ import 'package:inkfight/game/rules/match_rules.dart';
 /// (§5) and the movement detail (§6), plus the hit events the controller now
 /// reports. The screen's overlay lives in `bot_fight_screen_test.dart`, the
 /// arena smoke test in `bot_fight_game_test.dart`.
+///
+/// The `sound cues` group at the end is the one place the fight is listened
+/// to: it injects [_RecordingSounds], so it hears every cue without the audio
+/// plugin ever being loaded.
+class _RecordingSounds implements FightSounds {
+  /// Every cue the arena played, in order.
+  final List<FightCue> cues = <FightCue>[];
+
+  /// How many times the game asked for the cache to warm up.
+  int warmUps = 0;
+
+  @override
+  void play(FightCue cue) => cues.add(cue);
+
+  @override
+  Future<void> warmUp() async => warmUps++;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -32,8 +51,12 @@ void main() {
 
   Future<InkFightBattleGame> loadedGame({
     BotProfile botProfile = passiveBot,
+    FightSounds? sounds,
   }) async {
-    final game = InkFightBattleGame(botProfile: botProfile);
+    final game = InkFightBattleGame(
+      botProfile: botProfile,
+      sounds: sounds ?? const SilentFightSounds(),
+    );
     game.onGameResize(Vector2(960, 540));
     await game.onLoad();
     return game;
@@ -852,6 +875,226 @@ void main() {
 
       landOneJab(game);
       expect(haptics, isEmpty);
+    });
+  });
+
+  group('sound cues', () {
+    /// The fake the arena is listened to through — the plugin is never
+    /// constructed anywhere in this group.
+    late _RecordingSounds sounds;
+
+    setUp(() => sounds = _RecordingSounds());
+
+    /// The guard bot: thinks every tick, never swings, and always raises its
+    /// guard at an incoming swing — `blockChance: 1` on the bot's own seeded
+    /// random, so the guard is deterministic, not lucky.
+    const guardBot = BotProfile(
+      difficulty: BotDifficulty.hard,
+      thinkIntervalMs: 16,
+      reactionMs: 0,
+      attackCooldownMs: 60000,
+      blockChance: 1,
+      heavyChance: 0,
+      hesitationChance: 0,
+      recoveryMs: 0,
+      preferredGap: 40,
+    );
+
+    /// Walks the player in and lands one jab (the §2 pattern the haptics
+    /// group uses; its copy is private to that group, so this one keeps the
+    /// cues group self-contained).
+    void landOneJab(InkFightBattleGame game) {
+      final jabReach = game.match.rules.lightAttack.reach;
+      var landed = false;
+      for (var i = 0; i < 400 && !landed; i++) {
+        final player = game.match.stateOf(FighterId.player);
+        final gap = (game.match.stateOf(FighterId.rival).x - player.x).abs();
+        game.setPlayerMoving(gap > jabReach * .9);
+        if (gap <= jabReach * .9 && player.canAct) {
+          game.sendPlayerAction(InputAction.lightPunch);
+        }
+        tick(game, 1);
+        landed = game.match.stateOf(FighterId.rival).health < 100;
+      }
+      expect(landed, isTrue, reason: 'the light punch should connect');
+    }
+
+    /// Walks the player in and lands one heavy kick (the §2 pattern, with
+    /// the kick's longer reach).
+    void landOneHeavy(InkFightBattleGame game) {
+      final reach = game.match.rules.heavyAttack.reach;
+      var landed = false;
+      for (var i = 0; i < 600 && !landed; i++) {
+        final player = game.match.stateOf(FighterId.player);
+        final gap = (game.match.stateOf(FighterId.rival).x - player.x).abs();
+        game.setPlayerMoving(gap > reach * .9);
+        if (gap <= reach * .9 && player.canAct) {
+          game.sendPlayerAction(InputAction.heavyKick);
+        }
+        tick(game, 1);
+        landed = game.match.stateOf(FighterId.rival).health < 100;
+      }
+      expect(landed, isTrue, reason: 'the heavy kick should connect');
+    }
+
+    test('a light connect plays the tick, after its own whoosh', () async {
+      final game = await loadedGame(sounds: sounds);
+      pastCountdown(game);
+      landOneJab(game);
+
+      // Exactly the round's sounds, in order: three counting beats, the
+      // swing's whoosh, then the impact the connect carries.
+      expect(sounds.cues, <FightCue>[
+        FightCue.countdownBlip,
+        FightCue.countdownBlip,
+        FightCue.countdownBlip,
+        FightCue.whooshLight,
+        FightCue.hitLight,
+      ]);
+    });
+
+    test('a heavy connect plays the thud, after its own whoosh', () async {
+      final game = await loadedGame(sounds: sounds);
+      pastCountdown(game);
+      landOneHeavy(game);
+
+      expect(sounds.cues, <FightCue>[
+        FightCue.countdownBlip,
+        FightCue.countdownBlip,
+        FightCue.countdownBlip,
+        FightCue.whooshHeavy,
+        FightCue.hitHeavy,
+      ]);
+    });
+
+    test('a guarded hit plays the clack and no impact', () async {
+      final game = await loadedGame(botProfile: guardBot, sounds: sounds);
+      pastCountdown(game);
+
+      // Walk in and swing only from inside the jab's reach; the guard is
+      // always up by the time the active window opens.
+      final jabReach = game.match.rules.lightAttack.reach;
+      var guarded = false;
+      for (var i = 0; i < 600 && !guarded; i++) {
+        final player = game.match.stateOf(FighterId.player);
+        final gap = (game.match.stateOf(FighterId.rival).x - player.x).abs();
+        game.setPlayerMoving(gap > jabReach * .9);
+        if (gap <= jabReach * .9 && player.canAct) {
+          game.sendPlayerAction(InputAction.lightPunch);
+        }
+        tick(game, 1);
+        guarded = sounds.cues.contains(FightCue.blocked);
+      }
+
+      expect(sounds.cues, contains(FightCue.blocked));
+      expect(sounds.cues, isNot(contains(FightCue.hitLight)));
+      expect(sounds.cues, isNot(contains(FightCue.hitHeavy)));
+    });
+
+    test('a whiff only whooshes — no impact, nothing extra', () async {
+      final game = await loadedGame(sounds: sounds);
+      pastCountdown(game);
+
+      // Opening gap is 80 units, past every reach: the jab cuts air.
+      game.sendPlayerAction(InputAction.lightPunch);
+      var guard = 0;
+      while (game.whiffFxCount == 0 && guard++ < 40) {
+        tick(game, 1);
+      }
+      tick(game, 20); // through recovery: still nothing to hear
+
+      expect(sounds.cues, <FightCue>[
+        FightCue.countdownBlip,
+        FightCue.countdownBlip,
+        FightCue.countdownBlip,
+        FightCue.whooshLight,
+      ]);
+    });
+
+    test('the KO plays the gong once, and the reveal its sting', () async {
+      final game = await loadedGame(
+        botProfile: BotProfile.normal,
+        sounds: sounds,
+      );
+      pastCountdown(game);
+      var guard = 0;
+      while (!game.match.isFinished && guard++ < 4200) {
+        tick(game, 1);
+      }
+      expect(game.match.isFinished, isTrue);
+      tick(game, 90); // the slow motion and the frozen beat, to the card
+
+      expect(
+        sounds.cues.where((cue) => cue == FightCue.koGong),
+        hasLength(1),
+        reason: 'one gong per knockout, never per frame',
+      );
+      expect(
+        sounds.cues.where((cue) => cue == FightCue.roundSting),
+        hasLength(1),
+        reason: 'the result sting rides the same once-only reveal',
+      );
+    });
+
+    test('the countdown lays down exactly three blips', () async {
+      final game = await loadedGame(sounds: sounds);
+      pastCountdown(game);
+
+      expect(sounds.cues, <FightCue>[
+        FightCue.countdownBlip,
+        FightCue.countdownBlip,
+        FightCue.countdownBlip,
+      ], reason: '3 · 2 · 1 blip; the FIGHT! beat stays silent');
+    });
+
+    test('soundEnabled = false silences the whole fight', () async {
+      final game = await loadedGame(sounds: sounds);
+      game.soundEnabled = false;
+      pastCountdown(game); // would blip three times
+      landOneJab(game); // would whoosh and tick
+
+      expect(sounds.cues, isEmpty);
+    });
+
+    test('onLoad warms the seam once, and the game holds it', () async {
+      final game = await loadedGame(sounds: sounds);
+
+      expect(sounds.warmUps, 1);
+      expect(game.sounds, same(sounds));
+    });
+
+    test('the suite never reaches the audio plugin', () async {
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      // The channels the real implementation would speak through: the
+      // audioplayers method channels, and path_provider — audioplayers'
+      // cache copies each asset into a temp dir before the native side may
+      // read it. A fight that uses the injected seam must leave all three
+      // silent.
+      for (final name in [
+        'xyz.luan/audioplayers',
+        'xyz.luan/audioplayers.global',
+        'plugins.flutter.io/path_provider',
+      ]) {
+        final channel = MethodChannel(name);
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return null;
+        });
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      }
+
+      final game = await loadedGame(sounds: sounds);
+      pastCountdown(game);
+      landOneJab(game);
+
+      expect(sounds.cues, isNotEmpty, reason: 'the fight really sounded');
+      expect(
+        calls,
+        isEmpty,
+        reason: 'every cue played through the injected seam, not the plugin',
+      );
     });
   });
 }

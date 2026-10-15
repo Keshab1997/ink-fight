@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:inkfight/game/audio/fight_sounds.dart';
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
 import 'package:inkfight/game/rules/input_command.dart';
@@ -34,7 +35,12 @@ void main() {
     late final InkFightBattleGame game;
     await tester.runAsync(() async {
       await tester.pumpWidget(
-        MaterialApp(home: BotFightScreen(settings: InkSettings())),
+        MaterialApp(
+          home: BotFightScreen(
+            settings: InkSettings(),
+            sounds: const SilentFightSounds(),
+          ),
+        ),
       );
       game =
           tester
@@ -121,6 +127,7 @@ void main() {
           home: BotFightScreen(
             difficulty: BotDifficulty.hard,
             settings: InkSettings(),
+            sounds: const SilentFightSounds(),
           ),
         ),
       );
@@ -242,7 +249,14 @@ void main() {
     late final InkFightBattleGame game;
     await tester.runAsync(() async {
       await tester.pumpWidget(
-        MaterialApp(home: BotFightScreen(settings: settings ?? InkSettings())),
+        MaterialApp(
+          home: BotFightScreen(
+            settings: settings ?? InkSettings(),
+            // Silent on purpose: the screen's own path builds the real audio
+            // seam, and no test may load the plugin.
+            sounds: const SilentFightSounds(),
+          ),
+        ),
       );
       game =
           tester
@@ -618,5 +632,42 @@ void main() {
       hapticCalls(calls).map((call) => call.arguments),
       contains('HapticFeedbackType.lightImpact'),
     );
+  });
+
+  testWidgets('SOUND off in the model leaves the mounted fight silent', (
+    tester,
+  ) async {
+    final game = await mountFight(
+      tester,
+      settings: InkSettings(soundOn: false),
+    );
+
+    expect(
+      game.soundEnabled,
+      isFalse,
+      reason: 'the mount puts the model on the game',
+    );
+    expect(
+      game.sounds,
+      isA<SilentFightSounds>(),
+      reason: 'the screen hands its injected seam to the game',
+    );
+    // The app's own path passes no seam — `null` here — and the screen then
+    // builds the real `FlameFightSounds` (see `initState`); no test mounts
+    // that path, so the audio plugin is never loaded in this suite.
+    expect(BotFightScreen(settings: InkSettings()).sounds, isNull);
+  });
+
+  testWidgets('the SOUND switch reaches a live game through the listener', (
+    tester,
+  ) async {
+    final settings = InkSettings();
+    final game = await mountFight(tester, settings: settings);
+    expect(game.soundEnabled, isTrue);
+
+    settings.soundOn = false;
+    expect(game.soundEnabled, isFalse);
+    settings.soundOn = true;
+    expect(game.soundEnabled, isTrue);
   });
 }

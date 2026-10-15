@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'game/audio/fight_sounds.dart';
 import 'screens/app_routes.dart';
 import 'screens/home_screen.dart';
 import 'state/ink_settings.dart';
@@ -26,11 +27,16 @@ Future<void> main() async {
 }
 
 class InkFightApp extends StatelessWidget {
-  const InkFightApp({super.key, required this.settings});
+  const InkFightApp({super.key, required this.settings, this.sounds});
 
   /// The app's one preference model, built in `main()` and handed to the
   /// routes table — session-scoped by design (see [InkSettings]).
   final InkSettings settings;
+
+  /// The arena's audio seam. `null` in the app itself, where the fight
+  /// screen builds the real one; tests hand in a silent fake so no test
+  /// ever loads an audio plugin.
+  final FightSounds? sounds;
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +49,7 @@ class InkFightApp extends StatelessWidget {
       // of its own, and that name is the whole web deep link: the preview at
       // `…/preview/main/#/settings` arrives as `/settings` and lands on the
       // settings screen without any router package.
-      routes: InkRoutes.table(settings),
+      routes: InkRoutes.table(settings, sounds: sounds),
       onUnknownRoute: (_) =>
           MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
     );

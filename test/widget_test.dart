@@ -3,6 +3,7 @@ import 'package:flame/game.dart' hide Route;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:inkfight/game/audio/fight_sounds.dart';
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
 import 'package:inkfight/game/rules/match_rules.dart';
@@ -21,7 +22,9 @@ import 'package:inkfight/theme/app_theme.dart';
 Future<void> pumpDeepLink(WidgetTester tester, String route) async {
   tester.binding.platformDispatcher.defaultRouteNameTestValue = route;
   addTearDown(tester.binding.platformDispatcher.clearDefaultRouteNameTestValue);
-  await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+  await tester.pumpWidget(
+    InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+  );
 }
 
 /// Mirrors [InkFightApp] but with a navigator observer, so a test can read the
@@ -32,7 +35,7 @@ Widget _appWithObserver(_RouteRecorder observer) {
     theme: InkFightTheme.light,
     navigatorObservers: [observer],
     // The table already maps '/' to the menu, so no `home:` (the two clash).
-    routes: InkRoutes.table(InkSettings()),
+    routes: InkRoutes.table(InkSettings(), sounds: const SilentFightSounds()),
   );
 }
 
@@ -59,7 +62,9 @@ void main() {
   });
 
   testWidgets('shows the INK FIGHT landscape menu', (tester) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
 
     expect(find.text('INK FIGHT'), findsOneWidget);
     expect(find.text('DOODLE COMBAT'), findsOneWidget);
@@ -71,7 +76,9 @@ void main() {
   testWidgets('the menu shows the two hero fighters at full vignette', (
     tester,
   ) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(Image), findsNWidgets(2));
@@ -81,7 +88,9 @@ void main() {
   });
 
   testWidgets('the menu clock comes from the rules table', (tester) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
     await tester.pumpAndSettle();
 
     final totalSeconds = MatchRules.standard.roundMs ~/ 1000;
@@ -99,7 +108,9 @@ void main() {
     tester.view.physicalSize = const Size(360, 640);
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Rotate your device'), findsOneWidget);
@@ -113,7 +124,9 @@ void main() {
     tester.view.physicalSize = const Size(640, 360);
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(Image), findsNWidgets(2));
@@ -127,7 +140,9 @@ void main() {
     tester.view.physicalSize = const Size(1600, 720);
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(Image), findsNWidgets(2));
@@ -135,7 +150,9 @@ void main() {
   });
 
   testWidgets('menu BOT FIGHT opens the difficulty picker', (tester) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
 
     await tester.tap(find.text('BOT FIGHT'));
     await tester.pumpAndSettle();
@@ -149,7 +166,9 @@ void main() {
   });
 
   testWidgets('picking NORMAL opens the bot fight arena', (tester) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
     await tester.tap(find.text('BOT FIGHT'));
     await tester.pumpAndSettle();
 
@@ -190,7 +209,9 @@ void main() {
   });
 
   testWidgets('back from the picker returns to the menu', (tester) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
     await tester.tap(find.text('BOT FIGHT'));
     await tester.pumpAndSettle();
     expect(find.byType(DifficultyScreen), findsOneWidget);
@@ -203,7 +224,9 @@ void main() {
   });
 
   testWidgets('the READY badge also opens the picker', (tester) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
 
     await tester.tap(find.text('BOT MODE READY'));
     await tester.pumpAndSettle();
@@ -227,7 +250,9 @@ void main() {
   });
 
   testWidgets('online mode explains that it is planned', (tester) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
 
     await tester.tap(find.text('ONLINE 1V1'));
     await tester.pump();
@@ -241,7 +266,9 @@ void main() {
   testWidgets('the menu opens settings through the named route', (
     tester,
   ) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
 
     await tester.tap(find.text('SETTINGS'));
     await tester.pumpAndSettle();
@@ -258,7 +285,9 @@ void main() {
     tester,
   ) async {
     final settings = InkSettings();
-    await tester.pumpWidget(InkFightApp(settings: settings));
+    await tester.pumpWidget(
+      InkFightApp(settings: settings, sounds: const SilentFightSounds()),
+    );
     await tester.tap(find.text('SETTINGS'));
     await tester.pumpAndSettle();
 
@@ -280,7 +309,9 @@ void main() {
   });
 
   testWidgets('back returns to the menu', (tester) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
     await tester.tap(find.text('SETTINGS'));
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
@@ -323,7 +354,9 @@ void main() {
   testWidgets('QUIT TO MENU from the pause overlay lands back on the menu', (
     tester,
   ) async {
-    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpWidget(
+      InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+    );
     await tester.tap(find.text('BOT FIGHT'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('NORMAL'));
@@ -357,7 +390,9 @@ void main() {
     // tests use).
     late final InkFightBattleGame game;
     await tester.runAsync(() async {
-      await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+      await tester.pumpWidget(
+        InkFightApp(settings: InkSettings(), sounds: const SilentFightSounds()),
+      );
       await tester.tap(find.text('BOT FIGHT'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));

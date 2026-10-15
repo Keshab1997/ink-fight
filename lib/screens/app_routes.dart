@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../game/audio/fight_sounds.dart';
 import '../state/ink_settings.dart';
 import 'bot_fight_screen.dart';
 import 'difficulty_screen.dart';
@@ -27,11 +28,17 @@ abstract final class InkRoutes {
   /// write the same instance. The parameter is deliberately not named
   /// `settings`: that identifier is already the `/settings` route constant
   /// above, and a parameter of the same name would shadow it into a map key.
-  static Map<String, WidgetBuilder> table(InkSettings preferences) =>
-      <String, WidgetBuilder>{
-        home: (_) => const HomeScreen(),
-        difficulty: (_) => const DifficultyScreen(),
-        botFight: (_) => BotFightScreen(settings: preferences),
-        settings: (_) => SettingsScreen(settings: preferences),
-      };
+  ///
+  /// [sounds] is the arena's audio seam, passed straight through: `null` —
+  /// the app's own path — lets the fight screen build the real one, and
+  /// tests hand in a silent fake.
+  static Map<String, WidgetBuilder> table(
+    InkSettings preferences, {
+    FightSounds? sounds,
+  }) => <String, WidgetBuilder>{
+    home: (_) => const HomeScreen(),
+    difficulty: (_) => const DifficultyScreen(),
+    botFight: (_) => BotFightScreen(settings: preferences, sounds: sounds),
+    settings: (_) => SettingsScreen(settings: preferences),
+  };
 }

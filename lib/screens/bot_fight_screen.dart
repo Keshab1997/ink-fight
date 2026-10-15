@@ -1,6 +1,7 @@
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
+import '../game/audio/fight_sounds.dart';
 import '../game/bot/bot_strategy.dart';
 import '../game/ink_fight_battle_game.dart';
 import '../game/rules/input_command.dart';
@@ -14,6 +15,7 @@ class BotFightScreen extends StatefulWidget {
     super.key,
     this.difficulty = BotDifficulty.normal,
     required this.settings,
+    this.sounds,
   });
 
   /// The preset the practice bot plays on; the menu hands it in, and Normal is
@@ -21,9 +23,15 @@ class BotFightScreen extends StatefulWidget {
   final BotDifficulty difficulty;
 
   /// The app's preferences; the routes table hands in the app's one model.
-  /// The screen reads the HAPTICS switch off it and keeps the game's own
-  /// `hapticsEnabled` flag in sync for as long as it is alive.
+  /// The screen reads the HAPTICS and SOUND switches off it and keeps the
+  /// game's own `hapticsEnabled` and `soundEnabled` flags in sync for as
+  /// long as it is alive.
   final InkSettings settings;
+
+  /// The audio seam the game plays through; `null` — the app's own path —
+  /// means the real [FlameFightSounds]. Tests hand in a silent or recording
+  /// fake so no test ever loads an audio plugin.
+  final FightSounds? sounds;
 
   @override
   State<BotFightScreen> createState() => _BotFightScreenState();
@@ -54,27 +62,31 @@ class _BotFightScreenState extends State<BotFightScreen>
     super.initState();
     _game = InkFightBattleGame(
       botProfile: BotProfile.forDifficulty(widget.difficulty),
+      // The app path is the real thing; a test hands in its own seam.
+      sounds: widget.sounds ?? const FlameFightSounds(),
     );
-    _game.hapticsEnabled = widget.settings.hapticsOn;
-    widget.settings.addListener(_applyHaptics);
+    _applyPreferences();
+    widget.settings.addListener(_applyPreferences);
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    widget.settings.removeListener(_applyHaptics);
+    widget.settings.removeListener(_applyPreferences);
     _game.pauseEngine();
     super.dispose();
   }
 
-  /// Keeps the game's cue gate on the model's HAPTICS switch. The settings
-  /// screen can flip it while this screen sits in the stack, and the next
-  /// landed hit cues — or stays still — accordingly. A plain field write on
-  /// the game, so no setState is involved: nothing in this widget renders
-  /// the flag; the platform channel is what the player notices.
-  void _applyHaptics() {
+  /// Keeps the game's two cue gates on the model's two switches. The
+  /// settings screen can flip either one while this screen sits in the
+  /// stack, and the next swing, hit or gong cues — or stays silent and
+  /// still — accordingly. Plain field writes on the game, so no setState is
+  /// involved: nothing in this widget renders the flags; the platform
+  /// channels are what the player notices.
+  void _applyPreferences() {
     _game.hapticsEnabled = widget.settings.hapticsOn;
+    _game.soundEnabled = widget.settings.soundOn;
   }
 
   /// The app's lifecycle, as the platform reports it. Losing focus already
