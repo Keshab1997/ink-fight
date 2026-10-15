@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate INK FIGHT's placeholder sound effects.
+"""Generate INK FIGHT's designed sound effects.
 
 The cue list is exactly the one docs/technical/GAME_FEEL.md §4 specifies, so
 each file here has a line in the design document behind it:
@@ -7,16 +7,15 @@ each file here has a line in the design document behind it:
     light hit       ~80 ms  tick
     heavy hit      ~200 ms  thud + ink splat tail
     blocked                 wooden clack
-    attack start            whoosh (thin for the jab, longer for the kick)
+    attack start            body-first whoosh (jab / kick)
     jump / land             soft tap
     KO                      gong, then silence
     countdown / result      blip x3, then a short sting
 
 Everything is synthesised from scratch here (noise, sine partials, envelopes)
 so the repository carries no third-party audio and needs no licence review.
-They are deliberately plain: placeholders that make the fight audible and
-playable, meant to be replaced by recorded or designed audio later. Regenerate
-with:
+Layered impacts and body-first sweeps carry the contact on phone speakers.
+Fixed noise seeds make regeneration byte-for-byte repeatable. Regenerate with:
 
     python3 tool/generate_sfx.py            # writes assets/audio/*.wav
 
@@ -152,32 +151,40 @@ def write(name: str, signal: list[float], peak: float = PEAK) -> None:
 # the cues (GAME_FEEL §4, in the table's order)
 # --------------------------------------------------------------------------
 def light_hit() -> list[float]:
-    body = mul(lowpass(noise_frames_count(80, 11), 3200), decay(_frames(80), 14))
-    click = mul(tone(50, 1150), decay(_frames(50), 12))
-    return mix(gain(body, 1.0), gain(click, 0.5))
+    # Dry knuckle tick, backed by a brief falling chest resonance.
+    tick = mul(bandpass(noise_frames_count(80, 11), 900, 5200),
+               decay(_frames(80), 9, attack_ms=1))
+    body = mul(tone(80, 310, 170), decay(_frames(80), 22))
+    skin = mul(lowpass(noise_frames_count(80, 13), 1100),
+               decay(_frames(80), 16))
+    return mix(gain(tick, 1.1), gain(body, 0.65), gain(skin, 0.7))
 
 
 def heavy_hit() -> list[float]:
-    thud = mul(tone(220, 76), decay(_frames(220), 70))
-    chest = mul(tone(220, 150), decay(_frames(220), 45))
-    body = mul(lowpass(noise_frames_count(220, 23), 900), decay(_frames(220), 55))
-    splat = mul(
-        lowpass(noise_frames_count(420, 29), 1400),
-        decay(_frames(420), 150, attack_ms=18.0),
+    # The contact is immediate; a delayed, grainy splat belongs to the same
+    # ~200 ms gesture, not a second hit. Low-mids keep the weight on phones.
+    thud = mul(tone(210, 125, 58), decay(_frames(210), 48))
+    chest = mul(tone(180, 245, 130), decay(_frames(180), 35))
+    body = mul(lowpass(noise_frames_count(210, 23), 850),
+               decay(_frames(210), 32))
+    crack = mul(bandpass(noise_frames_count(35, 27), 1200, 4200),
+                decay(_frames(35), 6, attack_ms=1))
+    splat = [0.0] * _frames(18) + mul(
+        bandpass(noise_frames_count(192, 29), 450, 2600),
+        decay(_frames(192), 44, attack_ms=5),
     )
-    return mix(gain(thud, 3.0), gain(chest, 0.8), gain(body, 1.1), gain(splat, 0.45))
+    return mix(gain(thud, 1.8), gain(chest, 0.65), gain(body, 1.2),
+               gain(crack, 0.65), gain(splat, 1.0))
 
 
 def blocked() -> list[float]:
-    first = mul(lowpass(noise_frames_count(70, 31), 2600), decay(_frames(70), 16))
-    second = mul(lowpass(noise_frames_count(60, 37), 2000), decay(_frames(60), 20))
-    wood = mul(tone(60, 430), decay(_frames(60), 18))
-    rest = [0.0] * _frames(45)
-    return mix(
-        gain(first, 1.2),
-        gain(mul(wood, [1.0] * _frames(60)), 0.7),
-        rest + gain(second, 0.9),
-    )
+    # A single wooden contact with inharmonic, rapidly damped resonances.
+    crack = mul(bandpass(noise_frames_count(120, 31), 700, 4600),
+                decay(_frames(120), 7, attack_ms=1))
+    rings = [gain(mul(tone(120, hz), decay(_frames(120), tau)), amp)
+             for hz, amp, tau in [(510, 1.0, 25), (1235, 0.45, 18),
+                                  (2080, 0.2, 12)]]
+    return mix(gain(crack, 1.2), *rings)
 
 
 def whoosh_light() -> list[float]:
@@ -193,11 +200,11 @@ def whoosh_light() -> list[float]:
     air = mul(highpass(noise_frames_count(n, 41), 1200),
               decay(_frames(n), 90, attack_ms=18.0))
     gust = mul(tone(n, 560, 190), decay(_frames(n), 150, attack_ms=30.0))
-    return mix(body, gain(air, 0.5), gain(gust, 0.5))
+    return mix(body, gain(air, 0.74), gain(gust, 0.5))
 
 
 def whoosh_heavy() -> list[float]:
-    # The kick's sweep, same two bands an octave down and half a second of
+    # The kick's sweep, same two bands an octave down and a longer
     # tail — unmistakably bigger than the jab's, still only air.
     n = 380
     body = mul(bandpass(noise_frames_count(n, 44), 130, 780),
@@ -217,16 +224,20 @@ def step_tap() -> list[float]:
 
 
 def ko_gong() -> list[float]:
-    # A gong is a low fundamental plus inharmonic partials that ring out at
-    # different rates; the slow beating between them is the metal.
-    partials = [(180.0, 1.00, 620.0), (271.0, 0.62, 470.0), (383.0, 0.44, 380.0),
-                (545.0, 0.26, 260.0), (726.0, 0.14, 180.0)]
+    # 1300 ms stays below 60 KB. Each inharmonic mode bends down slightly;
+    # close neighbours beat like a struck plate, not a pure alarm tone.
+    n = 1300
+    partials = [(180.0, 1.00, 520.0), (271.0, 0.62, 410.0),
+                (383.0, 0.44, 320.0), (545.0, 0.26, 230.0),
+                (726.0, 0.14, 160.0)]
     layers = []
     for hz, amp, tau in partials:
-        layers.append(mul(tone(1000, hz), decay(_frames(1000), tau, attack_ms=5.0)))
-        layers.append(gain(layers[-1], 0.0))  # placeholder, keeps lengths obvious
-    struck = mul(lowpass(noise_frames_count(1000, 59), 300), decay(_frames(1000), 60, attack_ms=4.0))
-    return mix(gain(mix(*layers), 1.0), gain(struck, 0.8))
+        env = decay(_frames(n), tau, attack_ms=4)
+        layers.append(gain(mul(tone(n, hz, hz * 0.965), env), amp))
+        layers.append(gain(mul(tone(n, hz * 1.012, hz * 0.976), env), amp * 0.2))
+    struck = mul(lowpass(noise_frames_count(n, 59), 1600),
+                 decay(_frames(n), 12))
+    return mix(*layers, gain(struck, 0.45))
 
 
 def countdown_blip() -> list[float]:
