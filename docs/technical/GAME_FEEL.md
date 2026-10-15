@@ -107,28 +107,38 @@ freeze the fighters without freezing the effect.
 ## 4. Haptics and sound
 
 Both are GDD requirements, both must be **independently disableable**
-(GDD §129), and both currently do not exist: there is no audio package, no
-sound asset, and the settings HAPTICS row is a placeholder.
+(GDD §129). Both now exist and are wired: haptics fire from the hit events,
+and the nine cues below play through `FightSounds` — the arena speaks cues and
+never file names, so the assets can be replaced without touching a call site.
 
-| Event | Haptic | Sound (needs assets — see below) |
+| Event | Haptic | Sound |
 |---|---|---|
 | light hit | `lightImpact` | short tick, ~80 ms |
 | heavy hit | `heavyImpact` | low thud, ~200 ms + ink splat tail |
 | blocked | `selectionClick` | wooden clack |
-| attack start | — | short whoosh (light = thin, heavy = longer) |
+| attack start | — | whoosh (light 240 ms, heavy 380 ms) |
+| footfall (walking) | — | soft tap, one per stride |
 | jump / land | `selectionClick` | soft tap |
 | KO | `heavyImpact` twice, 90 ms apart | gong, then silence |
 | countdown / result | — | blip ×3, then a short sting |
 
-Audio is the one item that needs something new: a package
-(`flame_audio` fits the Flame stack; `audioplayers` is the alternative) plus
-~8 mono OGG/MP3 files ≤ 60 KB each. **That is a pubspec + asset change, so it
-needs Keshab's go-ahead** — haptics need nothing and can ship first.
+The cues are synthesised by `tool/generate_sfx.py` (mono 22050 Hz 16-bit,
+under 60 KB each, no third-party audio): deliberately plain placeholders that
+make the fight audible, written to be replaced by recorded or designed audio
+later. Two rules that came out of playing the fight and are easy to get wrong:
 
-Both are gated by real settings: the SOUND switch on the settings screen is
-currently session-only placeholder state, and HAPTICS is a "SOON" row. They
-become the switches that actually gate this, which also means the game needs to
-read one small shared settings object rather than owning its own copy.
+- **A whiff must be heard.** `whoosh_light` was noise above 500 Hz — a band a
+  phone speaker barely moves — so an empty swing read as silence. Both whooshes
+  are body-first now (the light one keeps ~60% of its energy under 900 Hz).
+- **Cues must land on their frame.** Playback goes through one pre-warmed
+  `AudioPool` per cue: setting each player's source once, in `warmUp`, is the
+  difference between a tap arriving with the foot and arriving after it.
+
+Both are gated by real settings: `InkSettings.soundOn` and `hapticsOn` are the
+switches, mirrored into the arena per frame, and a test asserts that turning
+sound off changes nothing about the simulation. The switches are still
+session-only (see the README's known gaps) — persisting them needs a storage
+dependency, so it waits on Keshab.
 
 ## 5. Round flow — the part that already half-exists
 
