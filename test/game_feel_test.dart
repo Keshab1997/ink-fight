@@ -202,7 +202,18 @@ void main() {
         tick(game, 1);
       }
       expect(game.match.stateOf(FighterId.player).action, FighterAction.idle);
-      expect(player.animation!.frames, hasLength(4));
+      expect(player.animation!.frames, hasLength(5));
+    });
+
+    test('idle keeps its 560 ms breath however many frames have landed', () async {
+      final game = await loadedGame();
+      pastCountdown(game);
+      for (final fighter in fightersOf(game)) {
+        // Four keyframes plus the loop-seam in-between (prompt pack §5).
+        expect(fighter.animation!.frames, hasLength(5));
+        expect(fighter.animation!.loop, isTrue);
+        expect(totalMsOf(fighter), closeTo(560, 1e-6));
+      }
     });
   });
 
@@ -451,7 +462,7 @@ void main() {
         tick(game, 1);
         expect(
           rival.animation!.frames,
-          hasLength(4),
+          hasLength(5),
           reason: 'idle cycle again',
         );
       },

@@ -54,7 +54,9 @@ Other cycles: **block** (raise 90 ms → loop frames 1–2 at 140 ms while the
 guard is held → release 120 ms) · **hurt** (000 at 0, 001 at 70, 002 at 150,
 then hold the last frame until hitstun ends — 220 ms light, 420 ms heavy) ·
 **jump** (takeoff 100, rise 150, apex 150, fall 160, landing 140 = 700 ms =
-`jumpMs`) · **walk** (see §6).
+`jumpMs`) · **walk** (see §6) · **idle** (one 560 ms breath — the old
+4 × 140 ms — spread evenly over however many frames are delivered: 5 since the
+loop-seam in-between, 112 ms each).
 
 Rule of thumb for any future move: the contact frame sits inside the active
 window, and `sum(frame holds) == totalMs` from the rules table.

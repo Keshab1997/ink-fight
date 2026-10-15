@@ -438,6 +438,21 @@ class InkFightBattleGame extends FlameGame {
       );
     }
 
+    /// A cycle that spreads [totalMs] evenly over however many frames the art
+    /// delivers: an in-between frame makes the motion smoother, never slower.
+    Future<SpriteAnimation> evenCycle(
+      String action, {
+      required double totalMs,
+      bool loop = false,
+    }) async {
+      final sprites = await loadCycle(action);
+      return SpriteAnimation.spriteList(
+        sprites,
+        stepTime: totalMs / 1000 / sprites.length,
+        loop: loop,
+      );
+    }
+
     /// A per-frame recipe (GAME_FEEL §1): `stepsMs[i]` is how long the frame
     /// at `from + i` holds. The recipe must fit the delivered frames exactly —
     /// a mismatch is a broken contract between the art pipeline and the feel
@@ -471,7 +486,9 @@ class InkFightBattleGame extends FlameGame {
     final walkStepTime = strideUnits / rules.walkSpeed / 6;
 
     return _FighterAnims(
-      idle: await cycle('idle', stepTime: .14, loop: true),
+      // One breath lasts the 560 ms it did as 4 × 140 ms, however many
+      // in-between frames have landed since (GAME_FEEL §1).
+      idle: await evenCycle('idle', totalMs: 560, loop: true),
       walk: await cycle('walk', stepTime: walkStepTime, loop: true),
       jump: await recipe('jump', _kJumpStepsMs),
       lightPunch: await recipe('light_punch', _kLightPunchStepsMs),

@@ -36,12 +36,13 @@ Using [CHARACTER_REFERENCE] as the exact character reference, create one standal
 
 The following action descriptions are appended one at a time to the universal frame prompt.
 
-### Idle — 4 frames
+### Idle — 5 frames (4 keyframes + 1 in-between)
 
 - `idle_000`: neutral ready stance, knees relaxed, arms lowered but ready, calm focused face.
 - `idle_001`: same stance with a tiny chest rise and scarf or ink ribbon lifted a few millimetres.
 - `idle_002`: same stance with the opposite foot and shoulder carrying a very small amount of weight.
 - `idle_003`: return to the exact neutral ready stance, matching frame 000.
+- `idle_004` — **in-between, loop seam (003 → 000)**: idle loop-seam in-between with the same ready stance, face, gloves and feet as both neighbouring frames; the long black scarf tail falls back halfway toward the short resting flick of frame 000, with a tiny exhale in the chest, so the idle loop closes without a pop. (Both characters; see §5b.)
 
 ### Walk — 6 frames
 
@@ -146,6 +147,52 @@ trusted: for the bot, measure the crimson accent centroid against the drawing's
 centre; for the player, look at which side the face and the leading fist are on.
 A mirrored frame is unusable — in-game the rival is mirrored again to face the
 player, and a flipped frame leaves him punching backwards.
+
+**Known mirrored keyframe.** `bot_crimson_rival_heavy_kick_003` (the contact
+frame) fails this check: the kick, the impact burst and the scarf all point the
+wrong way, so in-game the rival kicks away from the player for the 90 ms active
+window. Not fixed yet (regenerate it facing right). Until then, an in-between
+next to it uses a horizontally flipped copy as its neighbour reference.
+
+## 5b. In-between frames — densifying the delivered cycles
+
+Thin cycles read choppy, so the delivered cycles get in-between frames. An
+in-between is generated like any other frame (one image per call, approved
+reference first) with **both neighbouring keyframes as extra image inputs**:
+image 1 is the reference, image 2 the frame before, image 3 the frame after.
+Append this to the universal frame prompt (section 4), plus the
+character-specific face lock:
+
+```text
+The second image is the animation frame immediately BEFORE the requested frame and the third image is the frame immediately AFTER it. The requested frame is the in-between that sits exactly halfway between those two frames: copy their scale, framing, outline weight, face and ground baseline exactly, and change only what moves between them. The character faces RIGHT exactly as in the reference; do not mirror, flip or turn the character. No motion lines, no speed lines, no swoosh marks, no ink trails, no splashes.
+```
+
+- Player face lock: *the same angry slanted black eyebrows, the same eyes and
+  the same confident smirk* (a first attempt that skipped this lost the brows).
+- Rival face lock: *the same crimson mask with white eyes, the same sharp black
+  hair tufts and the same small stern mouth*.
+- Name the change against the neighbours ("halfway between its short flick and
+  its long trailing swing") rather than describing a fresh pose.
+
+**Acceptance gate (checked, not trusted).** Run the frame through
+`tool/process_character_assets.py`'s cleanup and alignment and compare it with
+both neighbours: clean border background, feet on the 900 px baseline, the
+facing lock above, and the head and feet staying within about 15 px of the
+neighbours' range. The tool centres each frame on its bounding box, so a scarf
+drawn longer than both neighbours shifts the whole body sideways. That reads as
+a twitch, which is worse than the gap the frame was meant to fill. Measure the
+whole loop before and after: the largest single-step jump must not grow.
+
+Rejected so far, with the measurement: the idle 002 → 003 in-between (three
+player attempts, two rival). Each drew the scarf at full trailing length, so the
+largest head jump of the loop grew from 13 px to 39 px (player) and from 43 px
+to 57 px (rival). It needs a scarf explicitly shorter than in frame 003.
+
+**Provenance.** Generated 2026-10-15 with `gemini-3.1-flash-image` through the
+agent's image tool, from `player_ink_fighter/reference_clean_source.png` and
+`bot_crimson_rival/reference_raw_black.png` (the references the delivered
+frames match), plus the two neighbouring originals. The originals are archived
+untouched: no cleanup or editing before `tool/process_character_assets.py`.
 
 ## 6. Negative constraints
 
