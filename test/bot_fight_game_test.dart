@@ -9,6 +9,26 @@ import 'package:inkfight/game/ink_fight_battle_game.dart';
 import 'package:inkfight/game/rules/input_command.dart';
 import 'package:inkfight/game/rules/match_rules.dart';
 
+/// How many frames the art pipeline actually SHIPPED for [fighter]'s [cycle].
+///
+/// The runtime manifest is the single source of truth (`tool/process_character_assets.py`
+/// writes it). Read live on purpose: an in-between frame landing later must make the
+/// motion smoother, never break a hard-coded count in this file. Cycles whose recipe
+/// uses a sub-range of the delivered frames (block raise / release) are asserted in
+/// `game_feel_test.dart`, where the expected count is part of the recipe contract.
+Future<int> deliveredFrames(String fighter, String cycle) async {
+  final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+  final prefix = 'assets/characters/runtime/$fighter/$cycle/';
+  return manifest.listAssets().where((key) => key.startsWith(prefix)).length;
+}
+
+/// The fighter files as the pipeline names them, indexed like [fightersOf]:
+/// the rival is [0], the player is [1].
+const List<String> _kFighterFiles = <String>[
+  'bot_crimson_rival',
+  'player_ink_fighter',
+];
+
 /// Headless smoke test for the arena view over the deterministic match
 /// controller: the view must place, mirror and animate fighters exactly as
 /// the controller's states say. The widget overlay is covered by
@@ -53,8 +73,12 @@ void main() {
     // on the arena floor line at 80% of the viewport height.
     expect(player.position.y - player.size.y * .121, closeTo(540 * .80, 1));
     expect(rival.position.y - rival.size.y * .121, closeTo(540 * .80, 1));
-    // The idle cycle breathes over the four delivered frames.
-    expect(player.animation!.frames, hasLength(4));
+    // The idle cycle breathes over however many frames the art delivered —
+    // one breath lasts 560 ms whether that is four keyframes or more.
+    expect(
+      player.animation!.frames,
+      hasLength(await deliveredFrames(_kFighterFiles[1], 'idle')),
+    );
   });
 
   test('holding MOVE walks the player on the delivered cycle', () async {
@@ -79,11 +103,17 @@ void main() {
     game.setPlayerMoving(true);
     tick(game, 20);
     expect(player.position.x, greaterThan(start));
-    expect(player.animation!.frames, hasLength(6)); // delivered walk cycle
+    expect(
+      player.animation!.frames,
+      hasLength(await deliveredFrames(_kFighterFiles[1], 'walk')),
+    ); // delivered walk cycle
 
     game.setPlayerMoving(false);
     tick(game, 2);
-    expect(player.animation!.frames, hasLength(4)); // back to idle
+    expect(
+      player.animation!.frames,
+      hasLength(await deliveredFrames(_kFighterFiles[1], 'idle')),
+    ); // back to idle
   });
 
   test(
@@ -112,7 +142,10 @@ void main() {
       }
 
       expect(landed, isTrue, reason: 'the light punch should connect');
-      expect(rival.animation!.frames, hasLength(3)); // hurt cycle
+      expect(
+        rival.animation!.frames,
+        hasLength(await deliveredFrames(_kFighterFiles[0], 'hurt')),
+      ); // hurt cycle
     },
   );
 
