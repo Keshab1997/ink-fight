@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
+import 'package:inkfight/game/rules/fighter_state.dart';
 import 'package:inkfight/game/rules/input_command.dart';
 import 'package:inkfight/game/rules/match_controller.dart';
 import 'package:inkfight/game/rules/match_rules.dart';
@@ -760,11 +761,8 @@ void main() {
 
       landOneJab(game);
       expect(haptics, hasLength(1));
-      expect(haptics.single.methodName, 'HapticFeedback.vibrate');
-      expect(
-        haptics.single.arguments,
-        'HapticFeedbackType.lightImpact',
-      );
+      expect(haptics.single.method, 'HapticFeedback.vibrate');
+      expect(haptics.single.arguments, 'HapticFeedbackType.lightImpact');
     });
 
     test('a whiff stays silent', () async {

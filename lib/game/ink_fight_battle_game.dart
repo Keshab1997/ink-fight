@@ -1245,8 +1245,7 @@ class InkFightBattleGame extends FlameGame {
       final tip = (box.x + box.facing * box.reach) * pxPerUnit;
       final chest = floor - height * .43;
       if (box.isActive) {
-        final fill = ui.Paint()
-          ..color = _kCrimsonFleck.withValues(alpha: .16);
+        final fill = ui.Paint()..color = _kCrimsonFleck.withValues(alpha: .16);
         canvas.drawRect(
           ui.Rect.fromLTRB(
             math.min(cx, tip),
