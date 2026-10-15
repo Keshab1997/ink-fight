@@ -41,6 +41,9 @@ enum FightCue {
 
   /// Restrained final-ten-seconds tick; counting blips replace it at 3/2/1.
   clockTick,
+
+  /// A two-or-more-hit streak unravelling; soft, falling low-mid air.
+  comboUnravel,
 }
 
 /// The seam between the fight and whatever makes noise.
@@ -113,7 +116,10 @@ class FightSoundVariation {
     int combo = 0,
   }) {
     if (!varies(cue)) {
-      return FightSoundVariation(1, cue == FightCue.clockTick ? .5 : .8);
+      return FightSoundVariation(
+        1,
+        cue == FightCue.clockTick || cue == FightCue.comboUnravel ? .5 : .8,
+      );
     }
     return FightSoundVariation(
       1 + comboLift(cue, combo) + (random.nextDouble() * 2 - 1) * .04,
@@ -163,6 +169,7 @@ class FlameFightSounds implements FightSounds {
     FightCue.countdownBlip => 'countdown_blip.wav',
     FightCue.roundSting => 'round_sting.wav',
     FightCue.clockTick => 'clock_tick.wav',
+    FightCue.comboUnravel => 'combo_unravel.wav',
   };
 
   @override

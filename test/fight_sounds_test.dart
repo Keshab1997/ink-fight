@@ -87,7 +87,10 @@ void main() {
       for (var i = 0; i < 20; i++) {
         final play = FightSoundVariation.sample(cue, random);
         expect(play.rate, 1);
-        expect(play.volume, cue == FightCue.clockTick ? .5 : .8);
+        expect(
+          play.volume,
+          cue == FightCue.clockTick || cue == FightCue.comboUnravel ? .5 : .8,
+        );
       }
     }
   });
@@ -109,6 +112,29 @@ void main() {
         peak = max(peak, wav.getInt16(i, Endian.little).abs());
       }
       expect(peak / 32767, inInclusiveRange(.28, .33));
+    },
+  );
+
+  test(
+    'unravel stays soft, fixed-pitch and uses a short mono PCM asset',
+    () async {
+      final data = await rootBundle.load('assets/audio/combo_unravel.wav');
+      final wav = ByteData.sublistView(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      );
+      expect(wav.getUint16(22, Endian.little), 1);
+      expect(wav.getUint32(24, Endian.little), 22050);
+      expect(wav.getUint16(34, Endian.little), 16);
+      expect(data.lengthInBytes, lessThan(60000));
+      expect((data.lengthInBytes - 44) / 44100, closeTo(.24, .001));
+      final play = FightSoundVariation.sample(
+        FightCue.comboUnravel,
+        Random(4),
+        combo: 100,
+      );
+      expect(play.rate, 1);
+      expect(play.volume, .5);
+      expect(FightSoundVariation.varies(FightCue.comboUnravel), isFalse);
     },
   );
 

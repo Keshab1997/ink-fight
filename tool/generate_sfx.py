@@ -12,6 +12,7 @@ restrained feedback for the final ten seconds:
     KO                      gong, then silence
     countdown / result      blip x3, then a short sting
     final ten seconds       soft wooden clock tick
+    combo break             soft falling unravel
 
 Everything is synthesised from scratch here (noise, sine partials, envelopes)
 so the repository carries no third-party audio and needs no licence review.
@@ -264,6 +265,18 @@ def clock_tick() -> list[float]:
     return mix(gain(body, 0.8), gain(tap, 0.4))
 
 
+def combo_unravel() -> list[float]:
+    # Falling low-mid breath: a soft counterweight to escalating impacts,
+    # not another hit. Body first, then a short diffuse paper-air tail.
+    n = 240
+    body = mul(tone(n, 540, 190), decay(_frames(n), 65, attack_ms=6))
+    breath = mul(bandpass(noise_frames_count(n, 83), 160, 850),
+                 decay(_frames(n), 72, attack_ms=12))
+    air = mul(bandpass(noise_frames_count(n, 89), 900, 2300),
+              decay(_frames(n), 40, attack_ms=10))
+    return mix(gain(body, 0.7), gain(breath, 0.8), gain(air, 0.12))
+
+
 CUES = {
     "hit_light.wav": light_hit,
     "hit_heavy.wav": heavy_hit,
@@ -275,12 +288,13 @@ CUES = {
     "countdown_blip.wav": countdown_blip,
     "round_sting.wav": round_sting,
     "clock_tick.wav": clock_tick,
+    "combo_unravel.wav": combo_unravel,
 }
 
 
 def main() -> int:
     for name, build in CUES.items():
-        write(name, build(), peak=0.32 if name == "clock_tick.wav" else PEAK)
+        write(name, build(), peak=0.32 if name in ("clock_tick.wav", "combo_unravel.wav") else PEAK)
     return 0
 
 

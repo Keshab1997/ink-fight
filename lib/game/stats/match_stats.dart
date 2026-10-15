@@ -12,6 +12,7 @@ class MatchStats extends ChangeNotifier {
   int _combo = 0;
   int _maxCombo = 0;
   int _hitPitchCombo = 0;
+  int _comboBreakVersion = 0;
 
   int get hitsLanded => _hitsLanded;
 
@@ -23,6 +24,10 @@ class MatchStats extends ChangeNotifier {
   /// Context for the cue immediately following onHit in the arena's drain.
   /// Never lends the player's streak to a rival's hit or a blocked/whiff cue.
   int get hitPitchCombo => _hitPitchCombo;
+
+  /// Monotone event serial: catches even a break/rebuild within one sim
+  /// frame. Muting consumes the serial rather than replaying it later.
+  int get comboBreakVersion => _comboBreakVersion;
 
   void onHit(HitEvent event) {
     _hitPitchCombo = 0;
@@ -39,7 +44,7 @@ class MatchStats extends ChangeNotifier {
             event.attacker == FighterId.player) ||
         (event.kind == HitKind.hit && event.defender == FighterId.player)) {
       changed = _combo != 0;
-      _combo = 0;
+      _breakCombo();
     } else if (event.kind == HitKind.blocked &&
         event.defender == FighterId.player) {
       _blocks++;
@@ -50,6 +55,20 @@ class MatchStats extends ChangeNotifier {
     if (changed) {
       notifyListeners();
     }
+  }
+
+  void _breakCombo() {
+    // The visible combo begins at two hits; a lone jab isn't an unravel.
+    if (_combo >= 2) _comboBreakVersion++;
+    _combo = 0;
+    _hitPitchCombo = 0;
+  }
+
+  /// Presentation-only round boundary. Lifetime totals survive for the card.
+  void finishRound() {
+    if (_combo == 0) return;
+    _breakCombo();
+    notifyListeners();
   }
 
   void reset() {

@@ -121,6 +121,50 @@ void main() {
     }
   });
 
+  test('each real combo break gets one serial, including a round ending', () {
+    final stats = MatchStats();
+    addTearDown(stats.dispose);
+    stats.onHit(event(FighterId.player, HitKind.hit));
+    stats.onHit(event(FighterId.player, HitKind.whiff));
+    expect(
+      stats.comboBreakVersion,
+      0,
+      reason: 'one hit is not a visible combo',
+    );
+    for (final breaker in [HitKind.whiff, HitKind.hit]) {
+      stats.onHit(event(FighterId.player, HitKind.hit));
+      stats.onHit(event(FighterId.player, HitKind.hit));
+      stats.onHit(
+        event(
+          breaker == HitKind.whiff ? FighterId.player : FighterId.rival,
+          breaker,
+        ),
+      );
+    }
+    expect(stats.comboBreakVersion, 2);
+    stats.onHit(event(FighterId.player, HitKind.hit));
+    stats.onHit(event(FighterId.player, HitKind.hit, ko: true));
+    final hits = stats.hitsLanded;
+    stats.finishRound();
+    expect(stats.comboBreakVersion, 3);
+    expect(stats.combo, 0);
+    expect(stats.hitPitchCombo, 0);
+    expect(stats.hitsLanded, hits);
+    expect(stats.maxCombo, 2);
+    stats.finishRound();
+    expect(
+      stats.comboBreakVersion,
+      3,
+      reason: 'finished frames never replay it',
+    );
+    stats.reset();
+    expect(
+      stats.comboBreakVersion,
+      3,
+      reason: 'rematch reset is not a fake break',
+    );
+  });
+
   test('10 through 4 tick; 3 through 1 blip, one cue per displayed second', () {
     final clock = MatchClockCues();
     expect(clock.update(MatchPhase.fighting, 10001), isNull);
