@@ -22,11 +22,16 @@ class BotFightScreen extends StatefulWidget {
     this.difficulty = BotDifficulty.normal,
     required this.settings,
     this.sounds,
+    this.rules = MatchRules.standard,
   });
 
   /// The preset the practice bot plays on; the menu hands it in, and Normal is
   /// the default the design document asks for (GDD §8).
   final BotDifficulty difficulty;
+
+  /// Production defaults to best-of-three; explicit rules keep single-round
+  /// fixtures and alternate modes on the same controller path.
+  final MatchRules rules;
 
   /// The app's preferences; the routes table hands in the app's one model.
   /// The screen reads the HAPTICS and SOUND switches off it and keeps the
@@ -81,6 +86,7 @@ class _BotFightScreenState extends State<BotFightScreen>
     super.initState();
     _resultAssets = AssetManifest.loadFromAssetBundle(rootBundle);
     _game = InkFightBattleGame(
+      rules: widget.rules,
       botProfile: BotProfile.forDifficulty(widget.difficulty),
       // The app path is the real thing; a test hands in its own seam.
       sounds:

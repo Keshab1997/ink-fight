@@ -194,9 +194,11 @@ class InkFightBattleGame extends FlameGame {
   /// default keeps every test and the debug path quiet, and the fight screen
   /// hands in the real one.
   InkFightBattleGame({
+    MatchRules rules = MatchRules.standard,
     BotProfile botProfile = BotProfile.normal,
     this.sounds = const SilentFightSounds(),
-  }) : _bot = BotController(profile: botProfile, fighter: FighterId.rival);
+  }) : _match = MatchController(rules: rules),
+       _bot = BotController(profile: botProfile, fighter: FighterId.rival);
 
   /// What the fight plays its cues through; every cue goes via [_play], so
   /// [soundEnabled] mutes the whole fight in one flag.
@@ -230,7 +232,8 @@ class InkFightBattleGame extends FlameGame {
   /// and the live active window, drawn from the rules (ROADMAP Phase 0).
   bool debugOverlay = false;
 
-  final MatchController _match = MatchController();
+  final MatchController _match;
+  int _presentedRound = 1;
   final BotController _bot;
   int _playerSequence = 0;
   int _lastHudSnapshot = 0;
@@ -605,6 +608,13 @@ class InkFightBattleGame extends FlameGame {
   /// drops every scrap of feel state from the finished match.
   void restartMatch() {
     _match.reset();
+    _resetRoundPresentation();
+  }
+
+  /// Shared by rematches and controller-owned round transitions. Reuse the
+  /// existing reset path; never reset match scores from the presentation.
+  void _resetRoundPresentation() {
+    _presentedRound = _match.roundNumber;
     _bot.reset();
     _playerSequence = 0;
     _hitStopMs = 0;
@@ -693,6 +703,10 @@ class InkFightBattleGame extends FlameGame {
       _bot.update(simDt, _match);
       _match.tick(simDt);
       _consumeHitEvents();
+      if (_presentedRound != _match.roundNumber) {
+        _stats.finishRound();
+        _resetRoundPresentation();
+      }
       _syncFromMatch();
       _updateCountdownSound();
       // The simulation runs before the sprite tickers so a swing's animation

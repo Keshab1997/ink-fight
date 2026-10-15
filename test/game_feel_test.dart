@@ -52,8 +52,10 @@ void main() {
   Future<InkFightBattleGame> loadedGame({
     BotProfile botProfile = passiveBot,
     FightSounds? sounds,
+    MatchRules rules = const MatchRules(roundsToWin: 1),
   }) async {
     final game = InkFightBattleGame(
+      rules: rules,
       botProfile: botProfile,
       sounds: sounds ?? const SilentFightSounds(),
     );
@@ -87,6 +89,73 @@ void main() {
       .animation!
       .frames
       .fold<double>(0, (sum, frame) => sum + frame.stepTime * 1000);
+
+  test(
+    'non-final KO resets round feel, final KO keeps the existing cinema',
+    () async {
+      final sounds = _RecordingSounds();
+      final game = await loadedGame(
+        rules: const MatchRules(health: 12),
+        sounds: sounds,
+      );
+      for (var round = 1; round <= 2; round++) {
+        pastCountdown(game);
+        var guard = 0;
+        while (!game.match.isFinished &&
+            game.match.roundNumber == round &&
+            guard++ < 1500) {
+          final player = game.match.player;
+          final gap = game.match.distanceBetween(
+            FighterId.player,
+            FighterId.rival,
+          );
+          game.setPlayerMoving(gap > game.match.rules.lightAttack.reach * .9);
+          if (player.canAct && gap <= game.match.rules.lightAttack.reach * .9) {
+            game.sendPlayerAction(InputAction.lightPunch);
+          }
+          tick(game, 1);
+        }
+        expect(guard, lessThan(1500));
+        expect(game.match.playerRoundWins, round);
+        expect(game.roundEndCardVisible, isFalse);
+        if (round == 1) {
+          expect(game.match.phase, MatchPhase.countdown);
+          expect(game.match.countdownRemainingMs, game.match.rules.countdownMs);
+          expect(game.match.player.health, 12);
+          expect(game.match.rival.health, 12);
+          expect(game.stats.hitsLanded, 0);
+          expect(game.stats.blocks, 0);
+          expect(game.stats.combo, 0);
+          expect(game.stats.maxCombo, 0);
+          expect(game.hitStopRemainingMs, 0);
+          expect(game.liveEffectCount, 0);
+          expect(game.whiffFxCount, 0);
+          expect(playerOf(game).animation!.loop, isTrue);
+          expect(rivalOf(game).animation!.loop, isTrue);
+          expect(
+            sounds.cues.where((cue) => cue == FightCue.koGong),
+            hasLength(1),
+            reason:
+                'the deciding hit was drained once before presentation reset',
+          );
+        }
+      }
+      expect(game.match.outcome, MatchOutcome.playerWin);
+      expect(
+        game.stats.hitsLanded,
+        2,
+        reason: 'statistics belong to the last round',
+      );
+      expect(sounds.cues.where((cue) => cue == FightCue.koGong), hasLength(2));
+      tick(game, 45);
+      expect(game.roundEndCardVisible, isTrue);
+      game.restartMatch();
+      expect(game.roundEndCardVisible, isFalse);
+      expect(game.match.roundNumber, 1);
+      expect(game.match.playerRoundWins, 0);
+      expect(game.stats.hitsLanded, 0);
+    },
+  );
 
   group('§1 frame-data-driven animation', () {
     test('the light punch contact frame shows exactly in the active window', () async {
@@ -729,7 +798,10 @@ void main() {
 
     test('the killing blow carries ko', () {
       final match = fightingMatch(
-        rules: const MatchRules(health: 6), // one light punch is lethal
+        rules: const MatchRules(
+          health: 6,
+          roundsToWin: 1,
+        ), // one light punch is lethal
       );
       walkIntoRange(match);
 

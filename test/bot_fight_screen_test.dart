@@ -50,6 +50,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: BotFightScreen(
+            rules: const MatchRules(roundsToWin: 1),
             settings: InkSettings(),
             sounds: const SilentFightSounds(),
           ),
@@ -165,7 +166,7 @@ void main() {
     await tester.tap(find.text('REMATCH'));
     await tester.pump();
     expect(find.text('REMATCH'), findsNothing);
-    // One match is one round: a rematch starts the normal countdown at once.
+    // This single-round fixture starts the normal countdown at once.
     expect(find.text('3'), findsOneWidget);
     expect(find.textContaining(RegExp(r'ROUND \d+')), findsNothing);
     expect(find.text('100%'), findsNWidgets(2));
@@ -192,6 +193,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: BotFightScreen(
+            rules: const MatchRules(roundsToWin: 1),
             difficulty: BotDifficulty.hard,
             settings: InkSettings(),
             sounds: const SilentFightSounds(),
@@ -309,6 +311,7 @@ void main() {
     WidgetTester tester, {
     InkSettings? settings,
     FightSounds sounds = const SilentFightSounds(),
+    MatchRules rules = const MatchRules(roundsToWin: 1),
   }) async {
     tester.view.physicalSize = const Size(1600, 720);
     tester.view.devicePixelRatio = 2;
@@ -319,6 +322,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: BotFightScreen(
+            rules: rules,
             settings: settings ?? InkSettings(),
             // Silent on purpose: the screen's own path builds the real audio
             // seam, and no test may load the plugin.
@@ -339,6 +343,59 @@ void main() {
     await tester.pump();
     return game;
   }
+
+  testWidgets(
+    'best-of-three draws replay countdown; only match end shows card',
+    (tester) async {
+      expect(BotFightScreen(settings: InkSettings()).rules.roundsToWin, 2);
+      final game = await mountFight(tester, rules: MatchRules.standard);
+      await tester.tap(find.text('GOT IT'));
+      await tester.pump();
+      game.pauseEngine(); // drive rules deterministically, without bot input
+      for (var round = 1; round <= 3; round++) {
+        while (game.match.countdownRemainingMs > 0) {
+          game.match.tick(.016);
+        }
+        var guard = 0;
+        while (!game.match.isFinished &&
+            game.match.roundNumber == round &&
+            guard++ < 5000) {
+          game.match.tick(.016);
+        }
+        expect(guard, lessThan(5000));
+        game.update(.001); // a positive render frame drains/syncs the boundary
+        await tester.pump();
+        expect(game.match.playerRoundWins, 0);
+        expect(game.match.rivalRoundWins, 0);
+        if (round < 3) {
+          expect(game.match.roundNumber, round + 1);
+          expect(game.match.phase, MatchPhase.countdown);
+          expect(find.text('3'), findsOneWidget);
+          expect(find.text('100%'), findsNWidgets(2));
+          expect(find.text('REMATCH'), findsNothing);
+          expect(game.roundEndCardVisible, isFalse);
+        } else {
+          expect(game.match.roundNumber, 3);
+          expect(game.match.outcome, MatchOutcome.draw);
+          expect(find.text('DRAW'), findsOneWidget);
+          expect(find.text('REMATCH'), findsOneWidget);
+          expect(game.roundEndCardVisible, isTrue);
+        }
+        expect(
+          find.textContaining(RegExp(r'ROUND \d+')),
+          findsNothing,
+          reason: 'no HUD-local counter or fabricated round stamp',
+        );
+      }
+      await tester.tap(find.text('REMATCH'));
+      await tester.pump(const Duration(milliseconds: 17));
+      expect(game.match.roundNumber, 1);
+      expect(game.match.playerRoundWins, 0);
+      expect(game.match.rivalRoundWins, 0);
+      expect(find.text('3'), findsOneWidget);
+      expect(find.text('REMATCH'), findsNothing);
+    },
+  );
 
   testWidgets('pause freezes the match clock and RESUME runs it again', (
     tester,

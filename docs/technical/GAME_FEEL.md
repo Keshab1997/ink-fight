@@ -153,14 +153,30 @@ sound off changes nothing about the simulation. The switches are still
 session-only (see the README's known gaps) — persisting them needs a storage
 dependency, so it waits on Keshab.
 
-## 5. Round flow — the part that already half-exists
+## 5. Round flow — controller-owned best of three
 
-| Moment | Today | Target |
-|---|---|---|
-| countdown (2000 ms) | number | 4 beats of 500 ms: 3 · 2 · 1 · FIGHT!, brush-stroke style |
-| KO blow | round-end card appears | slow-mo 0.25× for 350 ms → hit-stop 250 ms → card stamps in |
-| loser / winner | end pose (`_endPose`, exists) | loser plays knockdown→defeat, winner plays victory; the rival's defeat cycle now exists (96/96 frames landed) |
-| rematch | exists | keep as is |
+`MatchRules.roundsToWin` defaults to **2**; `maxRounds` derives as
+`2 * roundsToWin - 1` (three by default). `MatchController.roundNumber` is
+1-based; `playerRoundWins` and `rivalRoundWins` are the authoritative scores.
+The existing `countdown → fighting → finished` phases and `MatchOutcome` stay
+unchanged: `finished`/`outcome` describe the **match**, not an intermediate round.
+
+- KO: the survivor wins the round. Timeout: healthier fighter wins; equal
+  health is a drawn round and awards neither side a win.
+- A win target reached ends the match immediately. Otherwise advance the round,
+  including after a draw. At the round cap, compare scores: more wins takes the
+  match, equal scores draw. Draws consume rounds, so a capped 1–0 is a win.
+- Each new round restores health, start positions, clock and countdown from 3.
+  The minimal arena hook reuses rematch presentation reset: reset atmosphere
+  and round-local stats, clear KO/end/effect flags, and snap sprites idle. Drain
+  the closing hit events first, once. A non-final KO does not show an end card.
+- Final KOs retain 0.25× slow-mo for 350 ms → 250 ms freeze → result card;
+  final timeouts reveal the card immediately. End poses remain unchanged.
+- `reset()` / REMATCH clears scores and returns to round 1. No HUD-local round
+  number, delayed round stamp, extra pre-countdown hold or extra sting is added.
+- Explicit `roundsToWin: 1` preserves the original single-round KO, timeout,
+  outcome, cinema and rematch flow. Legacy finish fixtures use this mode;
+  best-of-three tests exercise the production default separately.
 
 ## 6. Movement detail
 

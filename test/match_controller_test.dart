@@ -136,9 +136,221 @@ int swingWhileDown(MatchController c, FighterId downed) {
   return accepted;
 }
 
+// Legacy combat/finish fixtures deliberately keep their original one-round
+// contract. Production defaults are exercised in the best-of-three group.
+const singleRoundRules = MatchRules(roundsToWin: 1);
+
 void main() {
+  group('controller-owned best-of-three', () {
+    // One clean jab makes a timeout decisive without causing a KO. Stop at
+    // the boundary, not after a fixed duration that would eat the countdown.
+    void resolveTimeout(MatchController c, MatchOutcome result) {
+      skipCountdown(c);
+      expect(c.phase, MatchPhase.fighting);
+      if (result != MatchOutcome.draw) {
+        final winner = result == MatchOutcome.playerWin
+            ? FighterId.player
+            : FighterId.rival;
+        walkUntilWithin(c, winner, c.rules.lightAttack.reach * .9);
+        press(c, winner, InputAction.lightPunch, 1);
+        run(c, c.rules.lightAttack.totalMs);
+        expect(c.stateOf(opposite(winner)).health, lessThan(c.rules.health));
+      }
+      final round = c.roundNumber;
+      var guard = 0;
+      while (!c.isFinished && c.roundNumber == round && guard++ < 5000) {
+        c.tick(c.rules.tickMs / 1000);
+      }
+      expect(guard, lessThan(5000));
+    }
+
+    // All 27 possible three-round paths, including early 2-0 finishes,
+    // split wins, unscored drawn rounds, and every capped score comparison.
+    for (final first in MatchOutcome.values) {
+      for (final second in MatchOutcome.values) {
+        for (final third in MatchOutcome.values) {
+          final path = [first, second, third];
+          test('timeout path ${path.map((r) => r.name).join('/')}', () {
+            final c = MatchController();
+            expect(c.roundNumber, 1);
+            expect(c.playerRoundWins, 0);
+            expect(c.rivalRoundWins, 0);
+            var playerWins = 0;
+            var rivalWins = 0;
+            for (var i = 0; i < path.length; i++) {
+              resolveTimeout(c, path[i]);
+              if (path[i] == MatchOutcome.playerWin) playerWins++;
+              if (path[i] == MatchOutcome.rivalWin) rivalWins++;
+              expect(c.playerRoundWins, playerWins);
+              expect(c.rivalRoundWins, rivalWins);
+              final finished = playerWins == 2 || rivalWins == 2 || i == 2;
+              expect(c.isFinished, finished);
+              if (finished) {
+                expect(c.roundNumber, i + 1);
+                expect(c.timeRemainingMs, 0);
+                expect(
+                  c.outcome,
+                  playerWins == rivalWins
+                      ? MatchOutcome.draw
+                      : playerWins > rivalWins
+                      ? MatchOutcome.playerWin
+                      : MatchOutcome.rivalWin,
+                );
+                final player = c.player;
+                c.tick(1);
+                expect(
+                  c.player,
+                  same(player),
+                  reason: 'finished state is frozen',
+                );
+                break;
+              }
+              expect(c.roundNumber, i + 2);
+              expect(c.phase, MatchPhase.countdown);
+              expect(c.outcome, isNull);
+              expect(c.countdownRemainingMs, c.rules.countdownMs);
+              expect(c.countdownRemainingMs, c.rules.countdownMs);
+              expect(c.timeRemainingMs, c.rules.roundMs);
+              expect(c.player.health, c.rules.health);
+              expect(c.rival.health, c.rules.health);
+              expect(c.player.x, c.rules.startX);
+              expect(c.rival.x, c.rules.rivalStartX);
+              expect(c.player.action, FighterAction.idle);
+              expect(c.rival.action, FighterAction.idle);
+            }
+            c.reset();
+            expect(c.roundNumber, 1);
+            expect(c.playerRoundWins, 0);
+            expect(c.rivalRoundWins, 0);
+            expect(c.phase, MatchPhase.countdown);
+            expect(c.outcome, isNull);
+            expect(c.drainHitEvents(), isEmpty);
+          });
+        }
+      }
+    }
+
+    for (final winner in FighterId.values) {
+      test(
+        '$winner KO scores, preserves event, resets inputs, then wins 2-0',
+        () {
+          final c = MatchController(rules: const MatchRules(health: 6));
+          for (var round = 1; round <= 2; round++) {
+            if (c.phase == MatchPhase.countdown) skipCountdown(c);
+            walkUntilWithin(c, winner, c.rules.lightAttack.reach * .9);
+            c.setMoveAxis(winner, winner == FighterId.player ? 1 : -1);
+            // Reusing sequence 1 in round two also checks the new-round reset.
+            press(c, winner, InputAction.lightPunch, 1);
+            press(
+              c,
+              winner,
+              InputAction.heavyKick,
+              2,
+            ); // buffered, must not leak
+            c.tick(
+              .25,
+            ); // the leftover catch-up must not eat the next countdown
+            final events = c.drainHitEvents();
+            expect(events.where((e) => e.ko), hasLength(1));
+            expect(events.single.attacker, winner);
+            expect(c.drainHitEvents(), isEmpty);
+            expect(c.playerRoundWins, winner == FighterId.player ? round : 0);
+            expect(c.rivalRoundWins, winner == FighterId.rival ? round : 0);
+            if (round == 1) {
+              expect(c.roundNumber, 2);
+              expect(c.countdownRemainingMs, c.rules.countdownMs);
+              expect(c.outcome, isNull);
+              skipCountdown(c);
+              run(c, 320);
+              expect(c.player.x, c.rules.startX);
+              expect(c.rival.x, c.rules.rivalStartX);
+              expect(c.player.action, FighterAction.idle);
+              expect(c.rival.action, FighterAction.idle);
+              // Already through countdown for the next loop.
+            } else {
+              expect(c.isFinished, isTrue);
+              expect(c.roundNumber, 2);
+              expect(c.stateOf(opposite(winner)).health, 0);
+              expect(
+                c.outcome,
+                winner == FighterId.player
+                    ? MatchOutcome.playerWin
+                    : MatchOutcome.rivalWin,
+              );
+            }
+          }
+        },
+      );
+    }
+
+    test('split KO / timeout / KO reaches a third-round match winner', () {
+      final c = MatchController(rules: const MatchRules(health: 12));
+      void playerKnockout() {
+        skipCountdown(c);
+        walkUntilWithin(c, FighterId.player, c.rules.heavyAttack.reach * .9);
+        press(c, FighterId.player, InputAction.heavyKick, 1);
+        final round = c.roundNumber;
+        var guard = 0;
+        while (!c.isFinished && c.roundNumber == round && guard++ < 100) {
+          c.tick(c.rules.tickMs / 1000);
+        }
+        expect(guard, lessThan(100));
+        expect(c.drainHitEvents().last.ko, isTrue);
+      }
+
+      playerKnockout();
+      expect(c.playerRoundWins, 1);
+      resolveTimeout(c, MatchOutcome.rivalWin);
+      expect(c.roundNumber, 3);
+      expect(c.playerRoundWins, 1);
+      expect(c.rivalRoundWins, 1);
+      expect(c.outcome, isNull);
+      playerKnockout();
+      expect(c.roundNumber, 3);
+      expect(c.playerRoundWins, 2);
+      expect(c.rivalRoundWins, 1);
+      expect(c.outcome, MatchOutcome.playerWin);
+    });
+
+    test('custom first-to-three finishes on its third win, not its second', () {
+      final c = MatchController(rules: const MatchRules(roundsToWin: 3));
+      for (var i = 1; i <= 3; i++) {
+        resolveTimeout(c, MatchOutcome.rivalWin);
+        expect(c.rivalRoundWins, i);
+        expect(c.isFinished, i == 3);
+      }
+      expect(c.roundNumber, 3);
+      expect(c.outcome, MatchOutcome.rivalWin);
+    });
+
+    test('custom first-to-three ends at five drawn rounds, not three', () {
+      final c = MatchController(rules: const MatchRules(roundsToWin: 3));
+      for (var i = 1; i <= 5; i++) {
+        resolveTimeout(c, MatchOutcome.draw);
+        expect(c.isFinished, i == 5);
+        expect(c.roundNumber, i == 5 ? 5 : i + 1);
+      }
+      expect(c.outcome, MatchOutcome.draw);
+      expect(c.playerRoundWins, 0);
+      expect(c.rivalRoundWins, 0);
+    });
+
+    test('reset midway through a scored match clears score and round', () {
+      final c = MatchController();
+      resolveTimeout(c, MatchOutcome.playerWin);
+      expect(c.playerRoundWins, 1);
+      c.reset();
+      expect(c.roundNumber, 1);
+      expect(c.playerRoundWins, 0);
+      expect(c.rivalRoundWins, 0);
+      expect(c.countdownRemainingMs, c.rules.countdownMs);
+      expect(c.player.health, c.rules.health);
+      expect(c.rival.health, c.rules.health);
+    });
+  });
+
   test('the countdown gates input and the clock starts full', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
 
     expect(c.phase, MatchPhase.countdown);
@@ -153,7 +365,7 @@ void main() {
   });
 
   test('a jab whiffs at the opening gap and lands once you close in', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -174,7 +386,7 @@ void main() {
   });
 
   test('one swing deals its damage once, not once per tick', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     closeIn(c);
@@ -189,7 +401,7 @@ void main() {
   });
 
   test('a block absorbs the jab and only chips the heavy kick', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     closeIn(c);
@@ -210,7 +422,7 @@ void main() {
 
   test('a landed hit locks the defender out, and a late press waits the '
       'stun out', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     final light = rules.lightAttack;
     skipCountdown(c);
@@ -263,7 +475,7 @@ void main() {
 
   test('a jab pressed in the recovery comes out the tick the recovery '
       'ends', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     final light = rules.lightAttack;
     skipCountdown(c);
@@ -298,7 +510,7 @@ void main() {
   });
 
   test('a press older than the buffer never fires', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -322,7 +534,7 @@ void main() {
   });
 
   test('a jump pressed inside a recovery comes out as the window ends', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     final light = rules.lightAttack;
     skipCountdown(c);
@@ -348,7 +560,7 @@ void main() {
   });
 
   test('a remembered press fires exactly once', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     final light = rules.lightAttack;
     skipCountdown(c);
@@ -379,7 +591,7 @@ void main() {
   });
 
   test('an attack is a committed window: recovery cannot be cancelled', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     closeIn(c);
@@ -394,7 +606,7 @@ void main() {
   });
 
   test('the jump is airborne time: no action until the fighter lands', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -411,7 +623,7 @@ void main() {
   });
 
   test('a jab passes under an airborne rival, the heavy kick does not', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     closeIn(c);
@@ -431,7 +643,7 @@ void main() {
   });
 
   test('the pushbox keeps the two fighters from overlapping', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -446,7 +658,7 @@ void main() {
   });
 
   test('a fighter stops at the arena wall', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -456,7 +668,7 @@ void main() {
   });
 
   test('a knockout ends the match and names the winner', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     punchOut(c);
@@ -479,7 +691,7 @@ void main() {
   });
 
   test('the clock decides a match nobody closes out', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -490,7 +702,7 @@ void main() {
   });
 
   test('a timeout goes to the healthier fighter', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     closeIn(c);
@@ -505,7 +717,7 @@ void main() {
   });
 
   test('a stale sequence number is dropped, not replayed', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     closeIn(c);
@@ -521,7 +733,7 @@ void main() {
   });
 
   test('a long stall does not fast-forward the match', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -532,7 +744,7 @@ void main() {
   });
 
   test('a rematch resets the clock, the health and any held input', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     punchOut(c);
@@ -585,7 +797,10 @@ void main() {
       ];
     }
 
-    expect(script(MatchController()), script(MatchController()));
+    expect(
+      script(MatchController(rules: singleRoundRules)),
+      script(MatchController(rules: singleRoundRules)),
+    );
   });
 
   test('a remembered press replays identically', () {
@@ -615,7 +830,7 @@ void main() {
       ];
     }
 
-    final first = script(MatchController());
+    final first = script(MatchController(rules: singleRoundRules));
     // The script has to be the interesting one: the heavy is still swinging
     // when the dust settles, which only happens if the remembered press
     // actually came out. `[1]` is the player's action in the list above.
@@ -624,11 +839,11 @@ void main() {
       FighterAction.heavyKick,
       reason: 'the remembered heavy fired out of the buffer',
     );
-    expect(script(MatchController()), first);
+    expect(script(MatchController(rules: singleRoundRules)), first);
   });
 
   test('an out-of-reach swing deals no damage, from either side', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -651,7 +866,7 @@ void main() {
   });
 
   test('a swing the target walks into only during recovery stays a whiff', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     final heavy = rules.heavyAttack;
     final slice = rules.tickMs / 1000;
@@ -693,7 +908,7 @@ void main() {
   });
 
   test('distanceBetween and isInReach agree with what the loop does', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -739,7 +954,7 @@ void main() {
   });
 
   test('the heavy kick reaches a gap the jab cannot', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -761,7 +976,7 @@ void main() {
   });
 
   test('a whiffed heavy kick stays punishable from the edge of its reach', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     final heavy = rules.heavyAttack;
     final slice = rules.tickMs / 1000;
@@ -807,7 +1022,7 @@ void main() {
   });
 
   test('a whiff is reported once, when the active window closes', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     final light = rules.lightAttack;
     skipCountdown(c);
@@ -834,7 +1049,7 @@ void main() {
   });
 
   test('a whiff that is interrupted during recovery still gets reported', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     final heavy = rules.heavyAttack;
     final slice = rules.tickMs / 1000;
@@ -888,7 +1103,7 @@ void main() {
   });
 
   test('a swing that connects never reports a whiff', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     closeIn(c);
@@ -909,7 +1124,7 @@ void main() {
       (close: true, attack: FighterAction.heavyKick),
     ];
     for (final scenario in scenarios) {
-      final c = MatchController();
+      final c = MatchController(rules: singleRoundRules);
       final rules = c.rules;
       skipCountdown(c);
       if (scenario.close) {
@@ -935,7 +1150,7 @@ void main() {
   });
 
   test('wouldConnect honours each attack\'s own reach', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -958,7 +1173,7 @@ void main() {
   });
 
   test('wouldConnect is false out of range and for actions with no hitbox', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     skipCountdown(c);
 
     // The opening gap is past both attacks.
@@ -982,7 +1197,7 @@ void main() {
   });
 
   test('a jab passes under an airborne target, a kick still connects', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     skipCountdown(c);
     closeIn(c);
 
@@ -993,7 +1208,7 @@ void main() {
   });
 
   test('isInReach is true only while the swing is in contact range', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     closeIn(c);
@@ -1012,7 +1227,7 @@ void main() {
   });
 
   test('a counter-hit heavy kick puts the defender down', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -1035,7 +1250,7 @@ void main() {
 
   test('an ordinary hit never knocks down, counter or not', () {
     // A jab into an idle fighter: ordinary hitstun.
-    final idle = MatchController();
+    final idle = MatchController(rules: singleRoundRules);
     skipCountdown(idle);
     closeIn(idle);
     press(idle, FighterId.player, InputAction.lightPunch, 1);
@@ -1050,7 +1265,7 @@ void main() {
 
     // A jab into a fighter that is itself attacking: still hitstun, because
     // only a heavy kick is a counter. The player's swing resolves first.
-    final trading = MatchController();
+    final trading = MatchController(rules: singleRoundRules);
     skipCountdown(trading);
     closeIn(trading);
     press(trading, FighterId.player, InputAction.lightPunch, 1);
@@ -1064,7 +1279,7 @@ void main() {
   });
 
   test('a knockout blow goes to the KO path and never to knockdown', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
 
@@ -1095,7 +1310,7 @@ void main() {
 
   test('no attack lands on a fighter lying down, from either side', () {
     for (final downed in FighterId.values) {
-      final c = MatchController();
+      final c = MatchController(rules: singleRoundRules);
       final rules = c.rules;
       skipCountdown(c);
 
@@ -1117,7 +1332,7 @@ void main() {
   });
 
   test('a fighter lying down cannot act until it stands', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     counterHit(c, FighterId.rival, 1);
@@ -1130,7 +1345,7 @@ void main() {
   });
 
   test('the clock keeps running while the fighter is down', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     skipCountdown(c);
     counterHit(c, FighterId.rival, 1);
 
@@ -1142,7 +1357,7 @@ void main() {
   });
 
   test('the fighter stands when the knockdown window ends', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     counterHit(c, FighterId.rival, 1);
@@ -1158,7 +1373,7 @@ void main() {
   });
 
   test('the pushbox still separates the bodies while one is down', () {
-    final c = MatchController();
+    final c = MatchController(rules: singleRoundRules);
     final rules = c.rules;
     skipCountdown(c);
     counterHit(c, FighterId.rival, 1);

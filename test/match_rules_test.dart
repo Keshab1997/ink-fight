@@ -8,11 +8,26 @@ import 'package:inkfight/game/rules/match_rules.dart';
 void main() {
   const rules = MatchRules.standard;
 
-  test('one round, 60 seconds, 100 health — the bot fight MVP', () {
+  test('best of three, 60 seconds per round, 100 health', () {
+    expect(rules.roundsToWin, 2);
+    expect(rules.maxRounds, 3);
     expect(rules.health, 100);
     expect(rules.roundMs, 60000);
     expect(rules.countdownMs, greaterThan(0));
     expect(rules.blockHoldMs, greaterThan(rules.lightAttack.totalMs));
+  });
+
+  test('the round cap derives from the win target, including legacy mode', () {
+    for (final target in [1, 2, 3, 5]) {
+      final custom = MatchRules(roundsToWin: target);
+      expect(custom.maxRounds, 2 * target - 1);
+    }
+  });
+
+  test('a round win target must be positive', () {
+    for (final target in [0, -1]) {
+      expect(() => MatchRules(roundsToWin: target), throwsAssertionError);
+    }
   });
 
   test('a match opens out of reach, so closing distance is part of it', () {

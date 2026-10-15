@@ -83,8 +83,8 @@ class AttackFrameData {
       elapsedMs >= startupMs && elapsedMs < startupMs + activeMs;
 }
 
-/// The tuning table. One match is one round on a 60-second clock, which is the
-/// bot-fight MVP in docs/product/GAME_DESIGN_DOCUMENT.md §6.
+/// The tuning table: first to two round wins by default (at most three
+/// 60-second rounds). Set roundsToWin to one for the single-round mode.
 ///
 /// These are starting numbers for playtesting, not final balance: the design
 /// document asks for a 60–120 second match, and the frame data below aims a
@@ -94,6 +94,7 @@ class MatchRules {
   const MatchRules({
     this.health = 100,
     this.roundMs = 60000,
+    this.roundsToWin = 2,
     this.countdownMs = 2000,
     this.tickMs = 16,
     this.maxCatchUpMs = 250,
@@ -129,13 +130,17 @@ class MatchRules {
       hitstunMs: 420,
       blockstunMs: 260,
     ),
-  });
+  }) : assert(roundsToWin > 0);
 
   /// The table every normal match plays on.
   static const MatchRules standard = MatchRules();
 
   final int health;
   final int roundMs;
+
+  /// Wins needed for a match. Drawn rounds award neither fighter a win.
+  final int roundsToWin;
+  int get maxRounds => 2 * roundsToWin - 1;
   final int countdownMs;
 
   /// The simulation slice. 16 ms is one frame of 60 FPS rounded down, so a

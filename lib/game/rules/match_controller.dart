@@ -103,6 +103,9 @@ class MatchController {
 
   MatchPhase _phase = MatchPhase.countdown;
   MatchOutcome? _outcome;
+  int _roundNumber = 1;
+  int _playerRoundWins = 0;
+  int _rivalRoundWins = 0;
   int _countdownRemainingMs = 0;
   int _timeRemainingMs = 0;
   double _accumulatorMs = 0;
@@ -110,6 +113,11 @@ class MatchController {
 
   MatchPhase get phase => _phase;
   MatchOutcome? get outcome => _outcome;
+
+  /// Current round (1-based). Only the rules advance it, never the HUD.
+  int get roundNumber => _roundNumber;
+  int get playerRoundWins => _playerRoundWins;
+  int get rivalRoundWins => _rivalRoundWins;
   int get timeRemainingMs => _timeRemainingMs;
 
   /// How much of the intro countdown is left; the arena draws its
@@ -167,6 +175,16 @@ class MatchController {
   /// way back from a finished match. Everything a match can accumulate — the
   /// clock, the sequence numbers, held movement — is cleared here.
   void reset() {
+    _roundNumber = 1;
+    _playerRoundWins = 0;
+    _rivalRoundWins = 0;
+    _hitEvents.clear();
+    _startRound();
+  }
+
+  /// Fresh round-local state. Keep the previous round's resolved hit events
+  /// until the caller drains them: the deciding KO must not go missing.
+  void _startRound() {
     _player = _freshState(FighterId.player, rules.startX);
     _rival = _freshState(FighterId.rival, rules.rivalStartX);
     _phase = MatchPhase.countdown;
@@ -176,7 +194,6 @@ class MatchController {
     _accumulatorMs = 0;
     _lastSequence.clear();
     _buffered.clear();
-    _hitEvents.clear();
     _moveAxis
       ..clear()
       ..[FighterId.player] = 0
@@ -381,12 +398,12 @@ class MatchController {
     _resolvePushbox();
 
     if (_player.health <= 0 || _rival.health <= 0) {
-      _finish(_knockoutOutcome());
+      _decideRound(_knockoutOutcome());
       return;
     }
     if (_timeRemainingMs <= 0) {
       _timeRemainingMs = 0;
-      _finish(_timeoutOutcome());
+      _decideRound(_timeoutOutcome());
     }
   }
 
@@ -714,6 +731,33 @@ class MatchController {
     return _player.health > _rival.health
         ? MatchOutcome.playerWin
         : MatchOutcome.rivalWin;
+  }
+
+  void _decideRound(MatchOutcome outcome) {
+    switch (outcome) {
+      case MatchOutcome.playerWin:
+        _playerRoundWins++;
+      case MatchOutcome.rivalWin:
+        _rivalRoundWins++;
+      case MatchOutcome.draw:
+        break;
+    }
+    if (_playerRoundWins >= rules.roundsToWin ||
+        _rivalRoundWins >= rules.roundsToWin ||
+        _roundNumber >= rules.maxRounds) {
+      _finish(
+        _playerRoundWins == _rivalRoundWins
+            ? MatchOutcome.draw
+            : _playerRoundWins > _rivalRoundWins
+            ? MatchOutcome.playerWin
+            : MatchOutcome.rivalWin,
+      );
+      return;
+    }
+    _roundNumber++;
+    // Clears the accumulator too, so this tick stops exactly at the round
+    // boundary; no catch-up time eats the new round's countdown.
+    _startRound();
   }
 
   void _finish(MatchOutcome outcome) {
