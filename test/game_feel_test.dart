@@ -257,19 +257,20 @@ void main() {
         match.rules.heavyAttack.hitstunMs,
       );
 
-      // Five delivered frames, paced to the heavy hitstun, not the light one.
-      expect(rival.animation!.frames, hasLength(5));
+      // Six delivered frames, paced to the heavy hitstun, not the light one.
+      expect(rival.animation!.frames, hasLength(6));
       expect(totalMsOf(rival), 420);
       expect(rival.animation!.loop, isFalse);
-      // The in-between only splits the recoil: the skid still lands at 180 ms
-      // and the recovered stance at 300 ms, holding to the end of the stun.
+      // The in-betweens only split the gaps: the recoil still lands at 90 ms,
+      // the skid at 180 ms and the recovered stance at 300 ms, holding to the
+      // end of the stun.
       final heavyStarts = <int>[0];
       for (final f in rival.animation!.frames) {
         heavyStarts.add(heavyStarts.last + (f.stepTime * 1000).round());
       }
-      expect(heavyStarts[1], 90);
-      expect(heavyStarts[3], 180);
-      expect(heavyStarts[4], 300);
+      expect(heavyStarts[2], 90);
+      expect(heavyStarts[4], 180);
+      expect(heavyStarts[5], 300);
       // It starts on the impact frame, which is the first one shown.
       expect(visibleFrame(rival), 0);
     });

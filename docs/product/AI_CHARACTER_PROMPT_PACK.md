@@ -141,7 +141,7 @@ flickered 44 px backwards for one frame.
 - `defeat_003`: quiet recovery motion, no violent or graphic detail.
 - `defeat_004`: final defeated result pose, suitable for a general mobile game.
 
-### Hurt heavy — 5 frames (knockback that travels) — `hurt_heavy`
+### Hurt heavy — 6 frames (knockback that travels) — `hurt_heavy`
 
 Added after playtesting feedback that a hit does not read as one: the fight had
 a single 3-frame `hurt` cycle for every hit, so a jab and a heavy kick looked
@@ -155,10 +155,11 @@ right. The cycle must read as movement across these four frames, not as four
 poses: the arms and the head lead, the feet catch up.
 
 - `hurt_heavy_000` — impact: head snapped back with the chin tucked, both fists blown up and out of the guard, weight already travelling backward.
-- `hurt_heavy_001` — maximum recoil: torso furthest back, front foot sliding backward, back knee bent deep under the force, scarf whipped forward past the face.
-- `hurt_heavy_002` (in-between, §5b) — coming out of the deepest recoil into the skid. The torso leans back less than in 001, both feet are planted and spread nearly as wide as in the skid, knees bent, both arms flail out at shoulder height, and the head comes back up, the face pained turning worried. No ground line, splashes or dust (the skid frame has its own).
-- `hurt_heavy_003` — the skid: feet planted wide apart mid-slide, body still leaning back, both arms flailing outward to catch balance, face coming back up.
-- `hurt_heavy_004` — recovering: centred again with weight settling, arms returning toward guard. This is the frame the player sees when control comes back, so it must read as ready, not as a second stagger.
+- `hurt_heavy_001` (in-between, §5b) — straightening out of the impact into the recoil. The torso passes through upright on its way from folded forward (000) to arched back (002). Both boxing gloves are thrown up above the shoulders, the head tilts back with the eyes squeezed shut and the mouth open in pain, and the feet are still near their impact positions. Say "boxing gloves, never open hands": one attempt drew bare hands.
+- `hurt_heavy_002` — maximum recoil: torso furthest back, front foot sliding backward, back knee bent deep under the force, scarf whipped forward past the face.
+- `hurt_heavy_003` (in-between, §5b) — coming out of the deepest recoil into the skid. The torso leans back less than in 002, both feet are planted and spread nearly as wide as in the skid, knees bent, both arms flail out at shoulder height, and the head comes back up, the face pained turning worried. No ground line, splashes or dust (the skid frame has its own).
+- `hurt_heavy_004` — the skid: feet planted wide apart mid-slide, body still leaning back, both arms flailing outward to catch balance, face coming back up.
+- `hurt_heavy_005` — recovering: centred again with weight settling, arms returning toward guard. This is the frame the player sees when control comes back, so it must read as ready, not as a second stagger.
 
 Append to the universal frame prompt (section 4) for every one of the four:
 
@@ -243,7 +244,7 @@ step / mean silhouette change, before → after):
 | light punch | 86 px / 0.28 → 52 px / 0.29 | 35 px / 0.25 → 42 px / 0.22 |
 | hurt | 56 px / 0.68 → 72 px / 0.52 ¹ | 14 px / 0.33 → 49 px / 0.26 ¹ |
 | heavy kick | 177 px / 0.44 → 216 px / 0.45 ² | 155 px / 0.36 → 155 px / 0.32 ³ |
-| hurt heavy | 219 px / 0.59 → 219 px / 0.55 | 178 px / 0.50 → 178 px / 0.46 |
+| hurt heavy | 219 px / 0.59 → 181 px / 0.55 | 178 px / 0.50 → 96 px / 0.43 ⁵ |
 | block raise ⁴ | 33 px / 0.23 → 23 px / 0.18 | 0 px / 0.08 → 0 px / 0.05 |
 | block release ⁴ | 18 px / 0.26 → 27 px / 0.21 | 42 px / 0.27 → 29 px / 0.22 |
 
@@ -263,6 +264,10 @@ the last held frame through the release back to `idle_000`. The rival's raise
 in-between moves the gloves inside his outline, so the silhouette barely sees
 it (0.01 to `block_001`). Its colour difference is in between, though: idle to
 guard 53.8, idle to the new frame 42.6, the new frame to the guard 20.2.
+⁵ The rival's largest planted-foot step grows from 162 to 180 px. Its 001 lands
+18 px past its neighbours' range, 3 px over the tolerance, and is accepted with
+that note. Registering it would have worsened its silhouette change against the
+two neighbours from 0.87 to 1.26.
 
 Rejected, with the measurement: the player's idle 002 → 003 in-between, four
 attempts. Twice the scarf came out longer than in frame 003 (the largest head
@@ -283,12 +288,19 @@ exists for, and it is the frame that landed. So is the fifth idle attempt:
 registered, its body stays put (the loop's largest head step is 12 px) and the
 slightly long scarf reads as a flick.
 
-Heavy hurt landed only its 001 → 002 in-between. The player's 000 → 001 failed
-twice. The first stood the torso upright between two leaning frames, so the body
-would wobble. The second turned the boxing gloves into open hands, which is
-off-model. The first 001 → 002 attempt was frame 001 with a new face and a
-ground line (silhouette distance 0.10). The rival's 000 → 001 passed and will
-land together with the player's, since the recipe is shared.
+Heavy hurt: the player's impact → recoil in-between took five attempts.
+- The first came out with its foot 38 px and its head 29 px outside the
+  neighbours' range. I first blamed its upright torso, which was wrong: 000 folds
+  forward and the recoil arches back, so the swing passes through upright, and
+  the frame that landed is upright too.
+- The second turned the boxing gloves into open hands, which is off-model.
+- Of the last two, one hid the face behind the gloves; the other is the frame
+  that landed.
+
+The first recoil → skid attempt was the recoil frame with a new face and a
+ground line (silhouette distance 0.10). The rival's impact → recoil in-between
+passed first time. It waited one batch for the player's, because the recipe is
+shared.
 
 **Haze.** A generation can leave a faint grey ground smudge under a lifted foot
 (the rival's `walk_002` did). `tool/process_character_assets.py` now clears any

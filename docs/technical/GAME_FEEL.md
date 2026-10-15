@@ -60,8 +60,9 @@ Other cycles: **block** (6 frames: raise 000–001 over 90 ms, [45, 45] → loop
 in-between 001 at 40, stagger 002 at 70, in-between 003 at 115, recovered 004
 at 150 = [40, 30, 45, 35, 70] — the in-betweens only split the old 0/70/150
 beats — then hold the last frame until hitstun ends — 220 ms light, 420 ms heavy;
-**hurt_heavy** is 5 frames, [90, 45, 45, 120, 120]: impact 000 at 0, recoil 001
-at 90, in-between 002 at 135, skid 003 at 180, recovered 004 at 300) ·
+**hurt_heavy** is 6 frames, [50, 40, 45, 45, 120, 120]: impact 000 at 0,
+in-between 001 at 50, recoil 002 at 90, in-between 003 at 135, skid 004 at 180,
+recovered 005 at 300) ·
 **jump** (takeoff 100, rise 150, apex 150, fall 160, landing 140 = 700 ms =
 `jumpMs`) · **walk** (see §6; 8 frames since the in-betweens) · **idle** (one
 560 ms breath — the old 4 × 140 ms — spread evenly over however many frames are

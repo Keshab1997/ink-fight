@@ -45,13 +45,13 @@ const List<int> _kHeavyKickStepsMs = <int>[60, 60, 60, 60, 90, 100, 120, 120];
 const List<int> _kHurtStepsMs = <int>[40, 30, 45, 35, 70];
 
 /// §1 hurt, heavy (a heavy kick landed): 420 ms = `heavyAttack.hitstunMs`.
-/// The keyframes keep their beats. 000 is the impact peak (head snapped back,
-/// scarf flaring), a 90 ms snap; 001, the maximum recoil, starts at 90 ms; 003,
-/// the skid, at 180 ms; 004, back in a near-neutral stance, at 300 ms, holding
-/// for the last 120 ms of the stun. The in-between 002 (out of the recoil into
-/// the skid) takes half of the recoil's old 90 ms. Not looping: 004 holds if
-/// the stun runs longer.
-const List<int> _kHurtHeavyStepsMs = <int>[90, 45, 45, 120, 120];
+/// The keyframes keep their beats: 000, the impact peak (head snapped back,
+/// scarf flaring), at 0 ms; 002, the maximum recoil, at 90 ms; 004, the skid,
+/// at 180 ms; 005, back in a near-neutral stance, at 300 ms, holding for the
+/// last 120 ms of the stun. The in-betweens split the gaps: 001 (straightening
+/// out of the impact into the recoil) and 003 (out of the recoil into the
+/// skid). Not looping: 005 holds if the stun runs longer.
+const List<int> _kHurtHeavyStepsMs = <int>[50, 40, 45, 45, 120, 120];
 
 /// §1 jump: takeoff 100, rise 150, apex 150, fall 160, landing 140 = 700 ms =
 /// `rules.jumpMs`, so the landing frame meets the ground.
