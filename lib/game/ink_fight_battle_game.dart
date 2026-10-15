@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import 'audio/fight_sounds.dart';
 import 'bot/bot_strategy.dart';
+import 'effects/arena_atmosphere.dart';
 import 'rules/fighter_state.dart';
 import 'rules/input_command.dart';
 import 'rules/match_controller.dart';
@@ -250,6 +251,8 @@ class InkFightBattleGame extends FlameGame {
   /// The countdown beat whose blip has already played — -1 until the first
   /// frame of a round, so a fresh countdown always starts on its "3".
   int _lastCountdownBeat = -1;
+
+  final ArenaAtmosphere _atmosphere = ArenaAtmosphere();
 
   final List<_Burst> _bursts = <_Burst>[];
   final List<_ImpactMark> _marks = <_ImpactMark>[];
@@ -564,6 +567,7 @@ class InkFightBattleGame extends FlameGame {
     _koCinematicStarted = false;
     _roundEndRevealed = false;
     _lastCountdownBeat = -1;
+    _atmosphere.reset();
     _bursts.clear();
     _marks.clear();
     _shake = null;
@@ -588,6 +592,7 @@ class InkFightBattleGame extends FlameGame {
       super.update(dt);
       return;
     }
+    _atmosphere.update(dt);
     final realMs = dt * 1000;
 
     // Two clocks: `simDt` drives the fighters, the bot, the match and their
@@ -762,6 +767,7 @@ class InkFightBattleGame extends FlameGame {
   /// ended the match.
   void _consumeHitEvents() {
     for (final event in _match.drainHitEvents()) {
+      _atmosphere.onHit(event, _match.rules.arenaWidth);
       _fireHaptic(event);
       _fireSound(event);
       switch (event.kind) {
@@ -1183,6 +1189,12 @@ class InkFightBattleGame extends FlameGame {
   }
 
   @override
+  void onRemove() {
+    _atmosphere.dispose();
+    super.onRemove();
+  }
+
+  @override
   void onGameResize(Vector2 size) {
     super.onGameResize(size);
     _layout(size);
@@ -1215,6 +1227,7 @@ class InkFightBattleGame extends FlameGame {
     // The paper stays put: the world shakes over it, never off it.
     final paper = ui.Paint()..color = InkColors.paper;
     canvas.drawRect(ui.Rect.fromLTWH(0, 0, size.x, size.y), paper);
+    _atmosphere.renderPaper(canvas, ui.Size(size.x, size.y));
 
     canvas.save();
     _applyCameraResponse(canvas);
@@ -1244,8 +1257,20 @@ class InkFightBattleGame extends FlameGame {
       arenaLine,
     );
     _renderRangeMarker(canvas, floor);
-
-    super.render(canvas);
+    _atmosphere.renderFloor(
+      canvas,
+      ui.Size(size.x, size.y),
+      floor,
+      _fighterHeight(),
+    );
+    _atmosphere.renderFighters(canvas, super.render, _player, _rival);
+    _atmosphere.renderHeavyStreaks(
+      canvas,
+      _match.player,
+      _match.rules,
+      _player,
+    );
+    _atmosphere.renderHeavyStreaks(canvas, _match.rival, _match.rules, _rival);
     // The ink draws over the fighters — the impact is the loudest thing on
     // screen for its few frames, but every effect lives and dies within the
     // ±15% height budget around the contact point and far below the HUD
