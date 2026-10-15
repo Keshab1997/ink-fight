@@ -1,7 +1,9 @@
+import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:inkfight/game/bot/bot_strategy.dart';
+import 'package:inkfight/game/ink_fight_battle_game.dart';
 import 'package:inkfight/main.dart';
 import 'package:inkfight/screens/app_routes.dart';
 import 'package:inkfight/screens/bot_fight_screen.dart';
@@ -251,6 +253,61 @@ void main() {
 
     // The one whole-screen chain: the menu is back, the arena is gone, and
     // the picker went with it.
+    expect(find.byType(BotFightScreen), findsNothing);
+    expect(find.byType(DifficultyScreen), findsNothing);
+    expect(find.text('DOODLE COMBAT'), findsOneWidget);
+  });
+
+  testWidgets('LEAVE from the round-end card lands back on the menu', (
+    tester,
+  ) async {
+    // The arena's sprites decode in real async, so the walk to the fight
+    // happens inside `runAsync` — otherwise the game's `onLoad` is stranded
+    // in the fake-async zone and the match never runs (the recipe the screen
+    // tests use).
+    late final InkFightBattleGame game;
+    await tester.runAsync(() async {
+      await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+      await tester.tap(find.text('BOT FIGHT'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(find.text('NORMAL'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      game =
+          tester
+                  .widget<GameWidget<FlameGame>>(
+                    find.byWidgetPredicate((w) => w is GameWidget<FlameGame>),
+                  )
+                  .game!
+              as InkFightBattleGame;
+      await game.toBeLoaded();
+      await game.ready();
+    });
+    await tester.pump();
+    expect(find.byType(BotFightScreen), findsOneWidget);
+
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+
+    // An idle player loses to the practice bot: run the match headlessly to
+    // its decided card, exactly as the screen tests do.
+    for (var i = 0; i < 4200 && !game.match.isFinished; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.match.isFinished, isTrue);
+    await tester.pump();
+    var guard = 0;
+    while (!game.roundEndCardVisible && guard++ < 90) {
+      await tester.pump(const Duration(milliseconds: 17));
+    }
+    expect(find.text('REMATCH'), findsOneWidget);
+
+    await tester.tap(find.text('LEAVE'));
+    await tester.pumpAndSettle();
+
+    // LEAVE unwinds like QUIT TO MENU: the menu is back, and both the arena
+    // and the picker it was opened from are gone.
     expect(find.byType(BotFightScreen), findsNothing);
     expect(find.byType(DifficultyScreen), findsNothing);
     expect(find.text('DOODLE COMBAT'), findsOneWidget);

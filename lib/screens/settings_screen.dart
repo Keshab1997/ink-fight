@@ -12,11 +12,11 @@ import '../widgets/ink_back_button.dart';
 /// button has somewhere to return to either way.
 ///
 /// [settings] is the app's one preference model, handed in by the routes
-/// table: the SOUND row reads and writes it directly, so what the switch
-/// shows is what the model says — even after leaving and coming back. Nothing
-/// local lives here: no preference setState, no placeholder field. HAPTICS
-/// stays the static `SOON` row this round; the arena's `hapticsEnabled` flag
-/// is what that row will be wired to, and it does not exist yet.
+/// table: both rows read and write it directly, so what a switch shows is
+/// what the model says — even after leaving and coming back. Nothing local
+/// lives here: no preference setState, no placeholder field. HAPTICS is a
+/// real control now: its switch drives `hapticsEnabled` on the fight
+/// screen's game, the flag behind the arena's vibrate-on-impact cues.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.settings});
 
@@ -45,22 +45,31 @@ class SettingsScreen extends StatelessWidget {
                           children: [
                             ListenableBuilder(
                               listenable: settings,
-                              builder: (context, _) => _ToggleRow(
-                                label: 'SOUND',
-                                caption: 'HIT CUES AND UI TAPS',
-                                value: settings.soundOn,
-                                onChanged: (value) => settings.soundOn = value,
+                              builder: (context, _) => Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _ToggleRow(
+                                    label: 'SOUND',
+                                    caption: 'HIT CUES AND UI TAPS',
+                                    value: settings.soundOn,
+                                    onChanged: (value) =>
+                                        settings.soundOn = value,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  // Audio and haptics are independent
+                                  // settings (design document): the arena
+                                  // reads this one through its game's
+                                  // `hapticsEnabled` flag, which the fight
+                                  // screen keeps in sync with the model.
+                                  _ToggleRow(
+                                    label: 'HAPTICS',
+                                    caption: 'INDEPENDENT FROM SOUND',
+                                    value: settings.hapticsOn,
+                                    onChanged: (value) =>
+                                        settings.hapticsOn = value,
+                                  ),
+                                ],
                               ),
-                            ),
-                            const SizedBox(height: 10),
-                            // The design document asks for audio and haptics to
-                            // be independent settings, and TactileFeedback is
-                            // not wired yet — so this row says so instead of
-                            // pretending to be a control.
-                            const _StaticRow(
-                              label: 'HAPTICS',
-                              caption: 'INDEPENDENT FROM SOUND',
-                              tag: 'SOON',
                             ),
                           ],
                         ),

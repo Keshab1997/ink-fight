@@ -31,7 +31,7 @@ abstract final class InkRoutes {
       <String, WidgetBuilder>{
         home: (_) => const HomeScreen(),
         difficulty: (_) => const DifficultyScreen(),
-        botFight: (_) => const BotFightScreen(),
+        botFight: (_) => BotFightScreen(settings: preferences),
         settings: (_) => SettingsScreen(settings: preferences),
       };
 }

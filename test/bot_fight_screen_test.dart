@@ -1,11 +1,14 @@
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
+import 'package:inkfight/game/rules/input_command.dart';
 import 'package:inkfight/game/rules/match_rules.dart';
 import 'package:inkfight/screens/bot_fight_screen.dart';
+import 'package:inkfight/state/ink_settings.dart';
 import 'package:inkfight/widgets/virtual_joystick.dart';
 
 /// Screen-level coverage for the live HUD and the decided-match card.
@@ -30,7 +33,9 @@ void main() {
     // flushes the component tree so both fighters exist before we tick.
     late final InkFightBattleGame game;
     await tester.runAsync(() async {
-      await tester.pumpWidget(const MaterialApp(home: BotFightScreen()));
+      await tester.pumpWidget(
+        MaterialApp(home: BotFightScreen(settings: InkSettings())),
+      );
       game =
           tester
                   .widget<GameWidget<FlameGame>>(
@@ -102,14 +107,22 @@ void main() {
     addTearDown(tester.view.reset);
 
     // Normal is the default the design document asks for (GDD §8).
-    expect(const BotFightScreen().difficulty, BotDifficulty.normal);
+    expect(
+      BotFightScreen(settings: InkSettings()).difficulty,
+      BotDifficulty.normal,
+    );
 
     // Same mount recipe as the card test above: the frames decode in a real
     // async zone, and `toBeLoaded()` + `ready()` hand back a mounted game.
     late final InkFightBattleGame game;
     await tester.runAsync(() async {
       await tester.pumpWidget(
-        const MaterialApp(home: BotFightScreen(difficulty: BotDifficulty.hard)),
+        MaterialApp(
+          home: BotFightScreen(
+            difficulty: BotDifficulty.hard,
+            settings: InkSettings(),
+          ),
+        ),
       );
       game =
           tester
@@ -216,14 +229,21 @@ void main() {
 
   /// Mounts the screen the proven way (the frames decode in a real async
   /// zone) and leaves the one-time controls card up, as a fresh mount does.
-  Future<InkFightBattleGame> mountFight(WidgetTester tester) async {
+  /// [settings] is the model the screen mounts with; tests that care about a
+  /// preference pass their own, the rest get a fresh default one.
+  Future<InkFightBattleGame> mountFight(
+    WidgetTester tester, {
+    InkSettings? settings,
+  }) async {
     tester.view.physicalSize = const Size(1600, 720);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
     late final InkFightBattleGame game;
     await tester.runAsync(() async {
-      await tester.pumpWidget(const MaterialApp(home: BotFightScreen()));
+      await tester.pumpWidget(
+        MaterialApp(home: BotFightScreen(settings: settings ?? InkSettings())),
+      );
       game =
           tester
                   .widget<GameWidget<FlameGame>>(
@@ -493,6 +513,110 @@ void main() {
       find.text('GOT IT'),
       findsOneWidget,
       reason: 'a fresh mount greets again and inherits nothing',
+    );
+  });
+
+  /// Records every call the app makes on `SystemChannels.platform` — the
+  /// channel `HapticFeedback` speaks through. Same recipe as the haptics
+  /// group in `game_feel_test.dart`.
+  List<MethodCall> recordPlatformCalls() {
+    final calls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    return calls;
+  }
+
+  /// Just the vibration traffic: the channel carries other calls too
+  /// (Material's buttons play a system click when tapped), and this test is
+  /// about haptics.
+  List<MethodCall> hapticCalls(List<MethodCall> calls) =>
+      calls.where((call) => call.method == 'HapticFeedback.vibrate').toList();
+
+  /// Ticks the opening countdown away so the match is live.
+  void pastCountdown(InkFightBattleGame game) {
+    for (var i = 0; i < 190 && game.match.phase != MatchPhase.fighting; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.match.phase, MatchPhase.fighting);
+  }
+
+  /// Walks the player in and jabs until one lands (the §2 pattern the haptics
+  /// group in `game_feel_test.dart` uses).
+  void landOneJab(InkFightBattleGame game) {
+    final jabReach = game.match.rules.lightAttack.reach;
+    var landed = false;
+    for (var i = 0; i < 400 && !landed; i++) {
+      final player = game.match.stateOf(FighterId.player);
+      final gap = (game.match.stateOf(FighterId.rival).x - player.x).abs();
+      if (gap > jabReach * .9) {
+        game.setPlayerMoving(true);
+      } else {
+        game.setPlayerMoving(false);
+        if (player.canAct) {
+          game.sendPlayerAction(InputAction.lightPunch);
+        }
+      }
+      game.update(1 / 60);
+      landed = game.match.stateOf(FighterId.rival).health < 100;
+    }
+    expect(landed, isTrue, reason: 'the light punch should connect');
+  }
+
+  testWidgets('HAPTICS off in the model silences a landed connect', (
+    tester,
+  ) async {
+    final calls = recordPlatformCalls();
+    final game = await mountFight(
+      tester,
+      settings: InkSettings(hapticsOn: false),
+    );
+    expect(
+      game.hapticsEnabled,
+      isFalse,
+      reason: 'the mount puts the model on the game',
+    );
+
+    pastCountdown(game);
+    landOneJab(game);
+    expect(
+      hapticCalls(calls),
+      isEmpty,
+      reason: 'the switch the player flipped reaches the platform channel',
+    );
+  });
+
+  testWidgets('HAPTICS on cues a landed hit, and the model drives it live', (
+    tester,
+  ) async {
+    final calls = recordPlatformCalls();
+    final settings = InkSettings();
+    final game = await mountFight(tester, settings: settings);
+    expect(game.hapticsEnabled, isTrue);
+
+    // The screen listens to the model while it is alive: a flip lands on the
+    // game at once, in both directions.
+    settings.hapticsOn = false;
+    expect(game.hapticsEnabled, isFalse);
+    settings.hapticsOn = true;
+    expect(game.hapticsEnabled, isTrue);
+
+    pastCountdown(game);
+    landOneJab(game);
+
+    // One cue per landed connect is the feel test's promise — it fights a
+    // passive bot there. The live practice bot may trade in the same window,
+    // so this asserts the cue the player's own connect carries: a light
+    // impact on the platform channel, while the switch is on.
+    expect(
+      hapticCalls(calls).map((call) => call.arguments),
+      contains('HapticFeedbackType.lightImpact'),
     );
   });
 }

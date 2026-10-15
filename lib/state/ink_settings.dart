@@ -13,9 +13,10 @@ import 'package:flutter/foundation.dart';
 /// global mutable singleton to reset between tests and no inherited-widget
 /// ceremony for the handful of values that exist today.
 class InkSettings extends ChangeNotifier {
-  InkSettings({this._soundOn = true});
+  InkSettings({this._soundOn = true, this._hapticsOn = true});
 
   bool _soundOn;
+  bool _hapticsOn;
 
   /// The SOUND row on the settings screen, and the gate the arena's audio
   /// will read when it lands. On by default: the design document asks for
@@ -27,6 +28,20 @@ class InkSettings extends ChangeNotifier {
       return;
     }
     _soundOn = value;
+    notifyListeners();
+  }
+
+  /// The HAPTICS row on the settings screen, and the switch the arena's
+  /// vibrate-on-impact cues read (the game's own public `hapticsEnabled`
+  /// flag, kept in sync by the fight screen while it is alive). On by
+  /// default and independent of [soundOn], as the design document asks.
+  bool get hapticsOn => _hapticsOn;
+
+  set hapticsOn(bool value) {
+    if (_hapticsOn == value) {
+      return;
+    }
+    _hapticsOn = value;
     notifyListeners();
   }
 }

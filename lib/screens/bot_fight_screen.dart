@@ -5,15 +5,25 @@ import '../game/bot/bot_strategy.dart';
 import '../game/ink_fight_battle_game.dart';
 import '../game/rules/input_command.dart';
 import '../game/rules/match_rules.dart';
+import '../state/ink_settings.dart';
 import '../theme/app_theme.dart';
 import '../widgets/virtual_joystick.dart';
 
 class BotFightScreen extends StatefulWidget {
-  const BotFightScreen({super.key, this.difficulty = BotDifficulty.normal});
+  const BotFightScreen({
+    super.key,
+    this.difficulty = BotDifficulty.normal,
+    required this.settings,
+  });
 
   /// The preset the practice bot plays on; the menu hands it in, and Normal is
   /// the default the design document asks for (GDD §8).
   final BotDifficulty difficulty;
+
+  /// The app's preferences; the routes table hands in the app's one model.
+  /// The screen reads the HAPTICS switch off it and keeps the game's own
+  /// `hapticsEnabled` flag in sync for as long as it is alive.
+  final InkSettings settings;
 
   @override
   State<BotFightScreen> createState() => _BotFightScreenState();
@@ -45,14 +55,26 @@ class _BotFightScreenState extends State<BotFightScreen>
     _game = InkFightBattleGame(
       botProfile: BotProfile.forDifficulty(widget.difficulty),
     );
+    _game.hapticsEnabled = widget.settings.hapticsOn;
+    widget.settings.addListener(_applyHaptics);
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.settings.removeListener(_applyHaptics);
     _game.pauseEngine();
     super.dispose();
+  }
+
+  /// Keeps the game's cue gate on the model's HAPTICS switch. The settings
+  /// screen can flip it while this screen sits in the stack, and the next
+  /// landed hit cues — or stays still — accordingly. A plain field write on
+  /// the game, so no setState is involved: nothing in this widget renders
+  /// the flag; the platform channel is what the player notices.
+  void _applyHaptics() {
+    _game.hapticsEnabled = widget.settings.hapticsOn;
   }
 
   /// The app's lifecycle, as the platform reports it. Losing focus already
@@ -201,7 +223,7 @@ class _BotFightScreenState extends State<BotFightScreen>
                   // slow-motion and frozen beat first (GAME_FEEL §5), a match
                   // the clock decided stamps in at once.
                   builder: (context, _, _) => _game.roundEndCardVisible
-                      ? _RoundEndCard(game: _game)
+                      ? _RoundEndCard(game: _game, onLeave: _quitToMenu)
                       : const SizedBox.shrink(),
                 ),
               ),
@@ -309,9 +331,15 @@ class _BattleHud extends StatelessWidget {
 
 /// The decided-match card: outcome, a rematch, and the way out.
 class _RoundEndCard extends StatelessWidget {
-  const _RoundEndCard({required this.game});
+  const _RoundEndCard({required this.game, required this.onLeave});
 
   final InkFightBattleGame game;
+
+  /// What LEAVE does. The screen hands in its QUIT TO MENU helper, so both
+  /// ways out of a finished match unwind the whole arena chain and land the
+  /// player on the menu — not on the difficulty picker the fight was opened
+  /// from.
+  final VoidCallback onLeave;
 
   @override
   Widget build(BuildContext context) {
@@ -374,7 +402,7 @@ class _RoundEndCard extends StatelessWidget {
                     color: InkColors.white,
                     borderRadius: BorderRadius.circular(13),
                     child: InkWell(
-                      onTap: () => Navigator.of(context).pop(),
+                      onTap: onLeave,
                       borderRadius: BorderRadius.circular(13),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
