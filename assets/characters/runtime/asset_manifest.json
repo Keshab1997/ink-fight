@@ -6,8 +6,8 @@
   "characters": {
     "bot_crimson_rival": {
       "source_archive": "assets/characters/originals/bot_crimson_rival",
-      "frame_count": 52,
-      "expected_frame_count": 52,
+      "frame_count": 60,
+      "expected_frame_count": 60,
       "frames": [
         {
           "file": "bot_crimson_rival_block_000.png",
@@ -100,6 +100,16 @@
           "runtime": "assets/characters/runtime/bot_crimson_rival/hurt/bot_crimson_rival_hurt_002.png"
         },
         {
+          "file": "bot_crimson_rival_hurt_003.png",
+          "animation": "hurt",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/hurt/bot_crimson_rival_hurt_003.png"
+        },
+        {
+          "file": "bot_crimson_rival_hurt_004.png",
+          "animation": "hurt",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/hurt/bot_crimson_rival_hurt_004.png"
+        },
+        {
           "file": "bot_crimson_rival_hurt_heavy_000.png",
           "animation": "hurt_heavy",
           "runtime": "assets/characters/runtime/bot_crimson_rival/hurt_heavy/bot_crimson_rival_hurt_heavy_000.png"
@@ -138,6 +148,16 @@
           "file": "bot_crimson_rival_idle_003.png",
           "animation": "idle",
           "runtime": "assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_003.png"
+        },
+        {
+          "file": "bot_crimson_rival_idle_004.png",
+          "animation": "idle",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_004.png"
+        },
+        {
+          "file": "bot_crimson_rival_idle_005.png",
+          "animation": "idle",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/idle/bot_crimson_rival_idle_005.png"
         },
         {
           "file": "bot_crimson_rival_jump_000.png",
@@ -215,6 +235,16 @@
           "runtime": "assets/characters/runtime/bot_crimson_rival/light_punch/bot_crimson_rival_light_punch_004.png"
         },
         {
+          "file": "bot_crimson_rival_light_punch_005.png",
+          "animation": "light_punch",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/light_punch/bot_crimson_rival_light_punch_005.png"
+        },
+        {
+          "file": "bot_crimson_rival_light_punch_006.png",
+          "animation": "light_punch",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/light_punch/bot_crimson_rival_light_punch_006.png"
+        },
+        {
           "file": "bot_crimson_rival_victory_000.png",
           "animation": "victory",
           "runtime": "assets/characters/runtime/bot_crimson_rival/victory/bot_crimson_rival_victory_000.png"
@@ -268,14 +298,24 @@
           "file": "bot_crimson_rival_walk_005.png",
           "animation": "walk",
           "runtime": "assets/characters/runtime/bot_crimson_rival/walk/bot_crimson_rival_walk_005.png"
+        },
+        {
+          "file": "bot_crimson_rival_walk_006.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/walk/bot_crimson_rival_walk_006.png"
+        },
+        {
+          "file": "bot_crimson_rival_walk_007.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/walk/bot_crimson_rival_walk_007.png"
         }
       ],
       "pending": []
     },
     "player_ink_fighter": {
       "source_archive": "assets/characters/originals/player_ink_fighter",
-      "frame_count": 52,
-      "expected_frame_count": 52,
+      "frame_count": 59,
+      "expected_frame_count": 59,
       "frames": [
         {
           "file": "player_ink_fighter_block_000.png",
@@ -368,6 +408,16 @@
           "runtime": "assets/characters/runtime/player_ink_fighter/hurt/player_ink_fighter_hurt_002.png"
         },
         {
+          "file": "player_ink_fighter_hurt_003.png",
+          "animation": "hurt",
+          "runtime": "assets/characters/runtime/player_ink_fighter/hurt/player_ink_fighter_hurt_003.png"
+        },
+        {
+          "file": "player_ink_fighter_hurt_004.png",
+          "animation": "hurt",
+          "runtime": "assets/characters/runtime/player_ink_fighter/hurt/player_ink_fighter_hurt_004.png"
+        },
+        {
           "file": "player_ink_fighter_hurt_heavy_000.png",
           "animation": "hurt_heavy",
           "runtime": "assets/characters/runtime/player_ink_fighter/hurt_heavy/player_ink_fighter_hurt_heavy_000.png"
@@ -406,6 +456,11 @@
           "file": "player_ink_fighter_idle_003.png",
           "animation": "idle",
           "runtime": "assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_003.png"
+        },
+        {
+          "file": "player_ink_fighter_idle_004.png",
+          "animation": "idle",
+          "runtime": "assets/characters/runtime/player_ink_fighter/idle/player_ink_fighter_idle_004.png"
         },
         {
           "file": "player_ink_fighter_jump_000.png",
@@ -483,6 +538,16 @@
           "runtime": "assets/characters/runtime/player_ink_fighter/light_punch/player_ink_fighter_light_punch_004.png"
         },
         {
+          "file": "player_ink_fighter_light_punch_005.png",
+          "animation": "light_punch",
+          "runtime": "assets/characters/runtime/player_ink_fighter/light_punch/player_ink_fighter_light_punch_005.png"
+        },
+        {
+          "file": "player_ink_fighter_light_punch_006.png",
+          "animation": "light_punch",
+          "runtime": "assets/characters/runtime/player_ink_fighter/light_punch/player_ink_fighter_light_punch_006.png"
+        },
+        {
           "file": "player_ink_fighter_victory_000.png",
           "animation": "victory",
           "runtime": "assets/characters/runtime/player_ink_fighter/victory/player_ink_fighter_victory_000.png"
@@ -536,6 +601,16 @@
           "file": "player_ink_fighter_walk_005.png",
           "animation": "walk",
           "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_005.png"
+        },
+        {
+          "file": "player_ink_fighter_walk_006.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_006.png"
+        },
+        {
+          "file": "player_ink_fighter_walk_007.png",
+          "animation": "walk",
+          "runtime": "assets/characters/runtime/player_ink_fighter/walk/player_ink_fighter_walk_007.png"
         }
       ],
       "pending": []

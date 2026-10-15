@@ -333,8 +333,17 @@ void main() {
         );
         // ...a jab hands the rival the light hurt cycle, which spans exactly
         // the light hitstun (§1). A heavy kick gets its own cycle, below.
-        expect(rival.animation!.frames, hasLength(3));
+        expect(rival.animation!.frames, hasLength(5));
         expect(totalMsOf(rival), 220);
+        // The in-betweens only split the gaps: the stagger still lands at
+        // 70 ms and the recovered pose at 150 ms, holding to the end.
+        final hurtStarts = <int>[0];
+        for (final f in rival.animation!.frames) {
+          hurtStarts.add(hurtStarts.last + (f.stepTime * 1000).round());
+        }
+        expect(hurtStarts[2], 70);
+        expect(hurtStarts[4], 150);
+        expect(rival.animation!.loop, isFalse);
 
         final clock = game.match.timeRemainingMs;
         final rivalX = game.match.stateOf(FighterId.rival).x;

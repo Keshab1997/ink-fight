@@ -34,10 +34,12 @@ const List<int> _kLightPunchStepsMs = <int>[30, 30, 30, 70, 65, 60, 65];
 /// `heavyAttack.totalMs`. Frame 003 (contact) holds the 240–330 ms window.
 const List<int> _kHeavyKickStepsMs = <int>[80, 80, 80, 90, 170, 170];
 
-/// §1 hurt (a light punch landed): 000 at 0 ms, 001 at 70 ms, 002 at 150 ms.
-/// The three steps sum to 220 ms = `lightAttack.hitstunMs`, so the cycle ends
-/// exactly as the light stun does.
-const List<int> _kHurtStepsMs = <int>[70, 80, 70];
+/// §1 hurt (a light punch landed). The keyframes keep their beats — recoil 000
+/// at 0 ms, stagger 002 at 70 ms, recovered 004 at 150 ms — and the in-betweens
+/// 001 (recoil building) and 003 (coming back) split the gaps. The five steps
+/// sum to 220 ms = `lightAttack.hitstunMs`, so the cycle ends exactly as the
+/// light stun does; it does not loop, so 004 holds if the stun runs longer.
+const List<int> _kHurtStepsMs = <int>[40, 30, 45, 35, 70];
 
 /// §1 hurt, heavy (a heavy kick landed): the four delivered frames, 420 ms =
 /// `heavyAttack.hitstunMs`. 000 is the impact peak (head snapped back, scarf

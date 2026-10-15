@@ -103,11 +103,13 @@ flickered 44 px backwards for one frame.
 - `block_002`: guard absorbing an impact, small black-and-white impact mark beside the guard.
 - `block_003`: guard lowering back toward ready stance.
 
-### Hurt — 3 frames
+### Hurt — 5 frames
 
 - `hurt_000`: small recoil from an incoming hit, face surprised but still recognisable.
-- `hurt_001`: strongest readable stagger, torso leaning away from the hit direction, feet visible.
-- `hurt_002`: recovering toward the ready stance without changing proportions.
+- `hurt_001` (in-between, §5b): the recoil building. The head snaps back, the torso starts tilting away from the hit (toward the left; he still faces right), the front glove starts to fly up and the front heel lifts while both feet stay near the ground. The face is halfway from surprised to pained. No stars, no impact marks.
+- `hurt_002`: strongest readable stagger, torso leaning away from the hit direction, feet visible. The rival's has small dizzy stars; this is the only frame that does.
+- `hurt_003` (in-between, §5b): coming back from the stagger. The torso is halfway back to upright, the lifted foot comes back down, the feet draw back under the body and both arms return toward guard. The face is halfway from pained to determined. No stars.
+- `hurt_004`: recovering toward the ready stance without changing proportions. It holds until the hitstun ends.
 
 ### Knockdown — 5 frames
 
@@ -135,9 +137,9 @@ flickered 44 px backwards for one frame.
 
 ### Hurt heavy — 4 frames (knockback that travels) — `hurt_heavy`
 
-Added after playtesting feedback that a hit does not read as one: the fight has
-a single 3-frame `hurt` cycle for every hit, so a jab and a heavy kick look
-identical and nothing shows the player being *driven backward*. The art bible
+Added after playtesting feedback that a hit does not read as one: the fight had
+a single 3-frame `hurt` cycle for every hit, so a jab and a heavy kick looked
+identical and nothing showed the player being *driven backward*. The art bible
 already reserved this animation under the name `hit_heavy` (online polish set);
 this is it, promoted because the feel needs it now.
 
@@ -202,6 +204,13 @@ a twitch, which is worse than the gap the frame was meant to fill. Measure the
 whole cycle before and after: the largest single-frame jump must not grow by
 more than that same tolerance.
 
+For attack and reaction cycles (punches, kicks, hurt), anchor on the planted
+foot instead of the head. The head measure (the top 22 % of the figure) picks
+up a raised glove or a kicking foot, while the lowest 40 rows are the foot that
+carries the weight. That foot must stay within the same 15 px of the
+neighbours' range, and its largest step must not grow beyond that tolerance.
+The head may travel, because in a kick or a recoil it really does.
+
 What the gate measured on the frames that landed (largest head jump per frame
 step / mean silhouette change, before → after):
 
@@ -210,6 +219,11 @@ step / mean silhouette change, before → after):
 | idle | 13 px / 0.11 → 13 px / 0.09 (seam only) | 43 px / 0.23 → 29 px / 0.18 |
 | walk | 8 px / 0.18 → 8 px / 0.15 | 40 px / 0.25 → 42 px / 0.22 |
 | light punch | 86 px / 0.28 → 52 px / 0.29 | 35 px / 0.25 → 42 px / 0.22 |
+| hurt | 56 px / 0.68 → 72 px / 0.52 ¹ | 14 px / 0.33 → 49 px / 0.26 ¹ |
+
+¹ Here the head measure includes the gloves thrown up by the hit. The planted
+feet stay inside the old frames' spread on every frame; the rival's stay within
+±10 px on all five. So the head number is not body travel.
 
 Rejected, with the measurement: the player's idle 002 → 003 in-between, four
 attempts. Twice the scarf came out longer than in frame 003 (the largest head
@@ -218,6 +232,17 @@ the eyebrows were missing. The rival's version passed only on its third attempt,
 once the prompt fixed the scarf length explicitly ("tips ending level with the
 outer edge of the rear glove"). Fix lengths and directions explicitly like
 that; "halfway" alone is not enough.
+
+A fifth attempt at that frame drew the scarf horizontal as asked, but again
+longer than frame 003 (head jump 13 → 42 px). The player's heavy-kick 001 → 002
+in-between failed twice. The first attempt returned frame 001 unchanged
+(silhouette distance 0.00); name the pose's geometry and say "not a copy of
+either input". The second drew the right pose, but alignment put its planted
+foot 96 px past frame 002's (foot path 299 → 472 → 376 px; the largest step
+grew from 108 to 173 px), a forward-and-back lurch in the wind-up. Both
+failures come from centring on the bounding box rather than on the feet, not
+from the drawing. The heavy-kick recipe is shared by both fighters, so that
+cycle stays at six frames until every one of its in-betweens passes for both.
 
 **Haze.** A generation can leave a faint grey ground smudge under a lifted foot
 (the rival's `walk_002` did). `tool/process_character_assets.py` now clears any
