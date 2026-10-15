@@ -96,8 +96,29 @@ class _BotFightScreenState extends State<BotFightScreen>
     super.dispose();
   }
 
+  bool _wasFightBeat = false;
+
   void _onTick(Duration elapsed) {
     _frame.value = elapsed;
+    // Flame's simulation ticker may run after this screen's ticker. Sample
+    // after paint so this cue sees the exact state the chip/arena just drew,
+    // instead of the previous frame (a one-frame-late FIGHT! sting).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final match = _game.match;
+      final fightBeat =
+          match.phase == MatchPhase.countdown &&
+          match.countdownRemainingMs <= match.rules.countdownMs ~/ 4;
+      if (fightBeat && !_wasFightBeat && _game.soundEnabled) {
+        _game.sounds.play(FightCue.roundSting);
+      }
+      // Consume muted beats too: enabling sound mid-beat must not cue late.
+      // Leaving the beat arms the next rematch. The arena still owns the
+      // 3/2/1 blips and the result sting; this screen adds only FIGHT!.
+      _wasFightBeat = fightBeat;
+    });
   }
 
   /// Keeps the game's two cue gates on the model's two switches. The
@@ -438,83 +459,103 @@ class _RoundEndCard extends StatelessWidget {
       MatchOutcome.rivalWin => 'CRIMSON RIVAL WINS',
       MatchOutcome.draw || null => 'DRAW',
     };
-    return ColoredBox(
-      color: InkColors.ink.withValues(alpha: .38),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(28, 22, 28, 24),
-          decoration: BoxDecoration(
-            color: InkColors.white,
-            borderRadius: BorderRadius.circular(19),
-            border: Border.all(color: InkColors.line),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      builder: (context, progress, child) => ColoredBox(
+        color: InkColors.ink.withValues(alpha: .38 * progress),
+        child: Center(
+          child: Opacity(
+            key: const ValueKey('round-end-stamp-opacity'),
+            opacity: progress,
+            child: Transform.scale(
+              key: const ValueKey('round-end-stamp-scale'),
+              scale: 1.06 - .06 * progress,
+              child: child,
+            ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(28, 22, 28, 24),
+        decoration: BoxDecoration(
+          color: InkColors.white,
+          borderRadius: BorderRadius.circular(19),
+          border: Border.all(color: InkColors.ink, width: 2),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 44,
+              height: 4,
+              child: ColoredBox(color: Color(0xFFC51F3A)),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                color: InkColors.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Material(
                   color: InkColors.ink,
-                  fontSize: 19,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.4,
+                  borderRadius: BorderRadius.circular(13),
+                  child: InkWell(
+                    onTap: game.restartMatch,
+                    borderRadius: BorderRadius.circular(13),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 11,
+                      ),
+                      child: Text(
+                        'REMATCH',
+                        style: TextStyle(
+                          color: InkColors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Material(
-                    color: InkColors.ink,
+                const SizedBox(width: 10),
+                Material(
+                  color: InkColors.white,
+                  borderRadius: BorderRadius.circular(13),
+                  child: InkWell(
+                    onTap: onLeave,
                     borderRadius: BorderRadius.circular(13),
-                    child: InkWell(
-                      onTap: game.restartMatch,
-                      borderRadius: BorderRadius.circular(13),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 11,
-                        ),
-                        child: Text(
-                          'REMATCH',
-                          style: TextStyle(
-                            color: InkColors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.1,
-                          ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 11,
+                      ),
+                      child: Text(
+                        'LEAVE',
+                        style: TextStyle(
+                          color: InkColors.inkSoft,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.1,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Material(
-                    color: InkColors.white,
-                    borderRadius: BorderRadius.circular(13),
-                    child: InkWell(
-                      onTap: onLeave,
-                      borderRadius: BorderRadius.circular(13),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 11,
-                        ),
-                        child: Text(
-                          'LEAVE',
-                          style: TextStyle(
-                            color: InkColors.inkSoft,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.1,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -699,7 +740,7 @@ class _ControlsHelpCard extends StatelessWidget {
 /// trail behind it eases down over ~250 ms so the eye reads how much just
 /// went missing, plus a white flash on the drop. The easing rides [tick] —
 /// the screen's own frame clock — and both layers are pure paint over
-/// `value`, so a paused engine freezes the trail exactly where it stands.
+/// `value`. Ticker time finishes the drain even while the engine is paused.
 class _HudHealth extends StatefulWidget {
   const _HudHealth({
     required this.label,
@@ -711,8 +752,8 @@ class _HudHealth extends StatefulWidget {
   final double value;
   final ValueListenable<Duration> tick;
 
-  /// Trail easing time constant: ~96% of the way down in ~250 ms.
-  static const double _trailTauMs = 80;
+  /// Finite, monotone drain: exact at the live edge before the KO card.
+  static const double _trailDurationMs = 260;
 
   /// Flash decay time constant: visibly gone in ~200 ms.
   static const double _flashTauMs = 70;
@@ -731,6 +772,8 @@ class _HudHealth extends StatefulWidget {
 
 class _HudHealthState extends State<_HudHealth> {
   late double _trail;
+  late double _trailStart;
+  double _trailElapsedMs = _HudHealth._trailDurationMs;
   double _flash = 0;
   Duration _lastTick = Duration.zero;
 
@@ -738,6 +781,7 @@ class _HudHealthState extends State<_HudHealth> {
   void initState() {
     super.initState();
     _trail = widget.value;
+    _trailStart = _trail;
     _lastTick = widget.tick.value;
     widget.tick.addListener(_onTick);
   }
@@ -754,9 +798,14 @@ class _HudHealthState extends State<_HudHealth> {
       // Damage: the crisp bar snaps, the trail keeps the old edge, the bar
       // flashes.
       _flash = 1;
-    } else if (widget.value > _trail) {
+      _trailStart = math.max(_trail, widget.value);
+      _trailElapsedMs = 0;
+    } else if (widget.value > oldWidget.value) {
       // Healing (a rematch): nothing was lost, so there is no trail to run.
       _trail = widget.value;
+      _trailStart = _trail;
+      _trailElapsedMs = _HudHealth._trailDurationMs;
+      _flash = 0;
     }
   }
 
@@ -774,18 +823,22 @@ class _HudHealthState extends State<_HudHealth> {
       return;
     }
     final target = widget.value;
-    final trailStep = 1 - math.exp(-dtMs / _HudHealth._trailTauMs);
-    final trail = _trail + (target - _trail) * trailStep;
-    final flash = _flash * math.exp(-dtMs / _HudHealth._flashTauMs);
-    if ((trail - target).abs() < _HudHealth._snapEpsilon &&
-        flash < _HudHealth._snapEpsilon) {
-      // Settled: snap exact once, then hold still without setStates.
-      if (_trail != target || _flash != 0) {
-        setState(() {
-          _trail = target;
-          _flash = 0;
-        });
-      }
+    _trailElapsedMs = math.min(
+      _HudHealth._trailDurationMs,
+      _trailElapsedMs + dtMs,
+    );
+    final progress = _trailElapsedMs / _HudHealth._trailDurationMs;
+    // Never a spring: interpolation cannot cross below the live bar, and
+    // at t=1 the endpoint is assigned exactly, including a KO's zero.
+    final trail = progress >= 1
+        ? target
+        : (_trailStart +
+                  (target - _trailStart) *
+                      Curves.easeOutCubic.transform(progress))
+              .clamp(target, 1.0);
+    final faded = _flash * math.exp(-dtMs / _HudHealth._flashTauMs);
+    final flash = faded < _HudHealth._snapEpsilon ? 0.0 : faded;
+    if (_trail == trail && _flash == flash) {
       return;
     }
     setState(() {

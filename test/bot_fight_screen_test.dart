@@ -12,6 +12,16 @@ import 'package:inkfight/screens/bot_fight_screen.dart';
 import 'package:inkfight/state/ink_settings.dart';
 import 'package:inkfight/widgets/virtual_joystick.dart';
 
+class _RecordingFightSounds implements FightSounds {
+  final List<FightCue> cues = [];
+
+  @override
+  void play(FightCue cue) => cues.add(cue);
+
+  @override
+  Future<void> warmUp() async {}
+}
+
 /// Screen-level coverage for the live HUD and the decided-match card.
 /// The headless view/controller behaviour lives in `bot_fight_game_test.dart`.
 void main() {
@@ -78,14 +88,66 @@ void main() {
     expect(health, 0, reason: 'the normal bot finishes an idle player');
     expect(game.roundEndCardVisible, isFalse);
     expect(find.text('REMATCH'), findsNothing);
+    var previousTrail = tester
+        .widgetList<LinearProgressIndicator>(
+          find.byType(LinearProgressIndicator),
+        )
+        .first
+        .value!;
+    expect(previousTrail, greaterThan(0), reason: 'KO does not snap the trail');
     var guard = 0;
     while (!game.roundEndCardVisible && guard++ < 90) {
       await tester.pump(const Duration(milliseconds: 17));
+      final trail = tester
+          .widgetList<LinearProgressIndicator>(
+            find.byType(LinearProgressIndicator),
+          )
+          .first
+          .value!;
+      expect(
+        trail,
+        inInclusiveRange(0, previousTrail),
+        reason: 'monotone KO drain never overshoots its live edge',
+      );
+      previousTrail = trail;
     }
     expect(game.roundEndCardVisible, isTrue);
     expect(guard, greaterThanOrEqualTo(35), reason: '~600 ms of cinema');
 
     expect(find.text('REMATCH'), findsOneWidget);
+    final bars = tester
+        .widgetList<LinearProgressIndicator>(
+          find.byType(LinearProgressIndicator),
+        )
+        .toList();
+    expect(bars[0].value, 0, reason: 'KO trail finishes exactly at live zero');
+    expect(bars[1].value, 0);
+
+    double stampScale() => tester
+        .widget<Transform>(find.byKey(const ValueKey('round-end-stamp-scale')))
+        .transform
+        .storage[0];
+    double stampOpacity() => tester
+        .widget<Opacity>(find.byKey(const ValueKey('round-end-stamp-opacity')))
+        .opacity;
+    expect(stampScale(), closeTo(1.06, .0001));
+    expect(stampOpacity(), 0);
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(stampScale(), inExclusiveRange(1, 1.06));
+    expect(stampOpacity(), inExclusiveRange(0, 1));
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(stampScale(), 1);
+    expect(stampOpacity(), 1);
+    expect(
+      tester
+          .widgetList<LinearProgressIndicator>(
+            find.byType(LinearProgressIndicator),
+          )
+          .first
+          .value,
+      0,
+      reason: 'no residual trail behind the card',
+    );
     // A decided match cannot be paused: the button is gone with the card up.
     expect(find.byIcon(Icons.pause_rounded), findsNothing);
     expect(
@@ -242,6 +304,7 @@ void main() {
   Future<InkFightBattleGame> mountFight(
     WidgetTester tester, {
     InkSettings? settings,
+    FightSounds sounds = const SilentFightSounds(),
   }) async {
     tester.view.physicalSize = const Size(1600, 720);
     tester.view.devicePixelRatio = 2;
@@ -255,7 +318,7 @@ void main() {
             settings: settings ?? InkSettings(),
             // Silent on purpose: the screen's own path builds the real audio
             // seam, and no test may load the plugin.
-            sounds: const SilentFightSounds(),
+            sounds: sounds,
           ),
         ),
       );
@@ -735,7 +798,7 @@ void main() {
     final settled = allBars();
     expect(settled, hasLength(4));
     expect(settled[1], closeTo(frozenTarget, .0001));
-    expect(settled[0], closeTo(frozenTarget, .01));
+    expect(settled[0], frozenTarget);
     expect(flashWash(), lessThan(.01));
   });
 
@@ -772,6 +835,70 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump();
     expect(find.text('01 : 00'), findsOneWidget);
+  });
+
+  testWidgets('FIGHT! and its sting share one tick, once per rematch', (
+    tester,
+  ) async {
+    final sounds = _RecordingFightSounds();
+    final game = await mountFight(tester, sounds: sounds);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    game.pauseEngine();
+
+    void reachFightBeat() {
+      for (var i = 0; i < 200 && game.match.countdownRemainingMs > 500; i++) {
+        game.update(1 / 60);
+      }
+    }
+
+    expect(sounds.cues.where((cue) => cue == FightCue.roundSting), isEmpty);
+    reachFightBeat();
+    // Manual sim time has reached the beat, but the chip has not drawn it.
+    expect(find.text('FIGHT!'), findsNothing);
+    expect(sounds.cues.where((cue) => cue == FightCue.roundSting), isEmpty);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('FIGHT!'), findsOneWidget);
+    expect(
+      sounds.cues.where((cue) => cue == FightCue.roundSting),
+      hasLength(1),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(
+      sounds.cues.where((cue) => cue == FightCue.roundSting),
+      hasLength(1),
+    );
+
+    game.restartMatch();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('3'), findsOneWidget);
+    reachFightBeat();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('FIGHT!'), findsOneWidget);
+    expect(
+      sounds.cues.where((cue) => cue == FightCue.roundSting),
+      hasLength(2),
+    );
+  });
+
+  testWidgets('muted FIGHT! stays silent even when sound is enabled mid-beat', (
+    tester,
+  ) async {
+    final sounds = _RecordingFightSounds();
+    final settings = InkSettings(soundOn: false);
+    final game = await mountFight(tester, settings: settings, sounds: sounds);
+    await tester.tap(find.text('GOT IT'));
+    await tester.pump();
+    game.pauseEngine();
+    for (var i = 0; i < 200 && game.match.countdownRemainingMs > 500; i++) {
+      game.update(1 / 60);
+    }
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('FIGHT!'), findsOneWidget);
+    expect(sounds.cues, isEmpty);
+    settings.soundOn = true;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(sounds.cues, isEmpty);
   });
 
   testWidgets('FIGHT! strobes on sim time across its beat', (tester) async {
