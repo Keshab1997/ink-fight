@@ -8,6 +8,29 @@ import 'match_rules.dart';
 /// (the active window closed without touching anyone).
 enum HitKind { hit, blocked, whiff }
 
+/// How long a press is remembered while its fighter sits inside a committed
+/// window, in match milliseconds.
+///
+/// The number is picked against the shortest windows the rules have: blockstun
+/// lasts 150 ms and a light punch recovers for 190 ms, so a press made inside
+/// either window can still come out, while one made near the start of a long
+/// window (a heavy kick recovers for 340 ms) dies before it could ever fire.
+/// The age only ever advances with the match clock — whole [MatchRules.tickMs]
+/// slices — so the same commands replayed over the same ticks resolve to the
+/// same fight.
+const int _kInputBufferMs = 150;
+
+/// One press waiting for its fighter to be able to act again.
+class _BufferedPress {
+  _BufferedPress(this.action);
+
+  /// What the player asked for; a later press replaces it (latest wins).
+  final InputAction action;
+
+  /// Match milliseconds since the press arrived; see [_kInputBufferMs].
+  int ageMs = 0;
+}
+
 /// One swing's result, as plain data for the view to react to.
 ///
 /// The controller decides hits; the arena only *presents* them — hit-stop,
@@ -71,6 +94,12 @@ class MatchController {
   late FighterState _rival;
   final Map<FighterId, double> _moveAxis = <FighterId, double>{};
   final Map<FighterId, int> _lastSequence = <FighterId, int>{};
+
+  /// One remembered press per fighter, at most. Filled only while the fighter
+  /// cannot act (see [_remember]) and emptied by [_releaseBuffered] when it
+  /// fires or goes stale, so a fighter never carries more than one intent.
+  final Map<FighterId, _BufferedPress> _buffered =
+      <FighterId, _BufferedPress>{};
 
   MatchPhase _phase = MatchPhase.countdown;
   MatchOutcome? _outcome;
@@ -146,6 +175,7 @@ class MatchController {
     _timeRemainingMs = rules.roundMs;
     _accumulatorMs = 0;
     _lastSequence.clear();
+    _buffered.clear();
     _hitEvents.clear();
     _moveAxis
       ..clear()
@@ -159,11 +189,19 @@ class MatchController {
     _moveAxis[fighter] = axis.isFinite ? axis.clamp(-1.0, 1.0) : 0;
   }
 
-  /// Applies one intent, or drops it. Dropped when the match is not fighting,
-  /// when the command is stale (a sequence number already seen for that
-  /// fighter), or when the fighter is inside a committed window — attacking,
-  /// jumping, blocking or stunned. Illegal input is ignored rather than queued:
-  /// a player who mashes during recovery does not get a free extra attack.
+  /// Applies one intent, briefly remembers it, or drops it.
+  ///
+  /// Dropped when the match is not fighting, or when the command is stale (a
+  /// sequence number already seen for that fighter). A press inside a
+  /// committed window — attacking, jumping, blocking, stunned, knocked down —
+  /// is never *applied*: nothing in this game cancels a window. Attacks and
+  /// jumps are instead remembered for up to [_kInputBufferMs] of match time
+  /// and fire on the first tick their fighter can act again, so a jab pressed
+  /// in the tail of the previous jab's recovery chains instead of vanishing;
+  /// a press older than that window is forgotten and never fires. Guards and
+  /// movement are states the player holds rather than one-off presses, so
+  /// they keep their old meaning: a block press inside a window is still
+  /// dropped, and [setMoveAxis] still holds until it changes.
   void submit(InputCommand command) {
     final seen = _lastSequence[command.fighter];
     if (seen != null && command.sequence <= seen) {
@@ -174,15 +212,24 @@ class MatchController {
     if (_phase != MatchPhase.fighting) {
       return;
     }
-    final fighter = stateOf(command.fighter);
-    if (!fighter.canAct) {
+    if (!stateOf(command.fighter).canAct) {
+      _remember(command.fighter, command.action);
       return;
     }
 
-    switch (command.action) {
+    _startAction(command.fighter, command.action);
+  }
+
+  /// Starts [action] for [id] right now. The direct press and the remembered
+  /// one both come through here, so a buffered attack begins exactly like a
+  /// live one — the same elapsed clock, the same cleared flags.
+  void _startAction(FighterId id, InputAction action) {
+    final fighter = stateOf(id);
+
+    switch (action) {
       case InputAction.lightPunch:
         _set(
-          command.fighter,
+          id,
           fighter.copyWith(
             action: FighterAction.lightPunch,
             actionElapsedMs: 0,
@@ -192,7 +239,7 @@ class MatchController {
         );
       case InputAction.heavyKick:
         _set(
-          command.fighter,
+          id,
           fighter.copyWith(
             action: FighterAction.heavyKick,
             actionElapsedMs: 0,
@@ -202,7 +249,7 @@ class MatchController {
         );
       case InputAction.jump:
         _set(
-          command.fighter,
+          id,
           fighter.copyWith(
             action: FighterAction.jump,
             actionElapsedMs: 0,
@@ -211,13 +258,63 @@ class MatchController {
         );
       case InputAction.block:
         _set(
-          command.fighter,
+          id,
           fighter.copyWith(
             action: FighterAction.block,
             actionElapsedMs: 0,
             blockRemainingMs: rules.blockHoldMs,
           ),
         );
+    }
+  }
+
+  /// Remembers an attack or a jump pressed inside a committed window, so the
+  /// tail of a window does not eat it. One slot per fighter: the latest press
+  /// wins, whatever it was. Guards keep the old rule — a held state is not a
+  /// press to replay — and are never remembered.
+  void _remember(FighterId id, InputAction action) {
+    // Exhaustive on purpose: an action added later has to say whether it is
+    // a press worth buffering or a state the player holds.
+    final isPress = switch (action) {
+      InputAction.lightPunch ||
+      InputAction.heavyKick ||
+      InputAction.jump => true,
+      InputAction.block => false,
+    };
+    if (!isPress) {
+      return;
+    }
+    _buffered[id] = _BufferedPress(action);
+  }
+
+  /// Ages every remembered press one tick, forgets the ones older than
+  /// [_kInputBufferMs], and fires the rest on the first tick their fighter can
+  /// act again — the same tick the window ends, never the one after.
+  ///
+  /// Runs right after both fighters advance and before the hitboxes resolve,
+  /// so a released jump is already airborne for this tick's swings: the press
+  /// is real from the tick it comes out. A press fires once and its slot is
+  /// emptied; a stale one is emptied the moment it ages out, so it can never
+  /// fire late.
+  void _releaseBuffered(int ms) {
+    if (_buffered.isEmpty) {
+      return;
+    }
+    for (final id in FighterId.values) {
+      final press = _buffered[id];
+      if (press == null) {
+        continue;
+      }
+      press.ageMs += ms;
+      if (press.ageMs > _kInputBufferMs) {
+        _buffered.remove(id); // too old: it never fires
+        continue;
+      }
+      if (!stateOf(id).canAct) {
+        continue;
+      }
+      _buffered.remove(id); // fire once
+      _startAction(id, press.action);
     }
   }
 
@@ -277,6 +374,9 @@ class MatchController {
     _timeRemainingMs -= ms;
     _player = _advance(_player, ms);
     _rival = _advance(_rival, ms);
+    // The window that ended in `_advance` is where a remembered press gets
+    // its turn — before the hitboxes, so the release belongs to this tick.
+    _releaseBuffered(ms);
     _resolveHits();
     _resolvePushbox();
 

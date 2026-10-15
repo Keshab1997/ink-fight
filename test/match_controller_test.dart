@@ -208,27 +208,174 @@ void main() {
     expect(c.rival.health, rules.health - rules.heavyAttack.blockedDamage);
   });
 
-  test('a landed hit locks the defender out until the stun ends', () {
+  test('a landed hit locks the defender out, and a late press waits the '
+      'stun out', () {
     final c = MatchController();
     final rules = c.rules;
+    final light = rules.lightAttack;
     skipCountdown(c);
     closeIn(c);
 
     press(c, FighterId.player, InputAction.lightPunch, 1);
-    run(c, rules.lightAttack.startupMs + rules.tickMs * 2);
+    run(c, light.startupMs + rules.tickMs * 2);
 
     expect(c.rival.isStunned, isTrue);
     expect(c.rival.canAct, isFalse);
 
+    // Pressed early: the stun still has ~188 ms to run — longer than the
+    // buffer remembers — so this press never cancels anything and dies
+    // before the window it was waiting on could end.
     press(c, FighterId.rival, InputAction.lightPunch, 9);
     expect(
       c.rival.action,
       FighterAction.hitstun,
-      reason: 'input during hitstun is dropped, never queued',
+      reason: 'a press never cancels a window, it only waits',
+    );
+    run(c, light.hitstunMs);
+    expect(c.rival.canAct, isTrue);
+    expect(
+      c.rival.action,
+      FighterAction.idle,
+      reason: 'the early press aged out before the stun ended',
     );
 
-    run(c, rules.lightAttack.hitstunMs);
-    expect(c.rival.canAct, isTrue);
+    // A second hit, and this time the press arrives inside the tail of the
+    // stun: remembered, it comes out on the tick the stun ends.
+    closeIn(c);
+    press(c, FighterId.player, InputAction.lightPunch, 2);
+    run(c, light.startupMs + rules.tickMs * 2);
+    expect(c.rival.isStunned, isTrue);
+    run(c, light.hitstunMs - rules.tickMs * 6);
+
+    press(c, FighterId.rival, InputAction.lightPunch, 10);
+    expect(
+      c.rival.action,
+      FighterAction.hitstun,
+      reason: 'the stun still owns the fighter',
+    );
+    run(c, rules.tickMs * 6);
+    expect(
+      c.rival.action,
+      FighterAction.lightPunch,
+      reason: 'the remembered press comes out as the window ends',
+    );
+  });
+
+  test('a jab pressed in the recovery comes out the tick the recovery '
+      'ends', () {
+    final c = MatchController();
+    final rules = c.rules;
+    final light = rules.lightAttack;
+    skipCountdown(c);
+
+    press(c, FighterId.player, InputAction.lightPunch, 1);
+    // Through startup and active (160 ms) and six ticks into the 190 ms
+    // recovery: the jab is still 94 ms from being able to act again.
+    run(c, light.startupMs + light.activeMs + rules.tickMs * 6);
+    expect(c.player.action, FighterAction.lightPunch);
+    expect(
+      c.player.actionElapsedMs,
+      light.startupMs + light.activeMs + rules.tickMs * 6,
+    );
+
+    press(c, FighterId.player, InputAction.lightPunch, 2);
+    // Five ticks later the first jab is still recovering: a buffer is not a
+    // cancel.
+    run(c, rules.tickMs * 5);
+    expect(c.player.action, FighterAction.lightPunch);
+    expect(c.player.actionElapsedMs, 336);
+
+    // The next tick reaches 352 ≥ 350, so the recovery ends — and the
+    // remembered jab starts on that same tick, its clock back at 0, not one
+    // frame later.
+    run(c, rules.tickMs);
+    expect(c.player.action, FighterAction.lightPunch);
+    expect(
+      c.player.actionElapsedMs,
+      0,
+      reason: 'the remembered jab starts as the recovery ends, not after it',
+    );
+  });
+
+  test('a press older than the buffer never fires', () {
+    final c = MatchController();
+    final rules = c.rules;
+    skipCountdown(c);
+
+    press(c, FighterId.player, InputAction.jump, 1);
+    run(c, rules.tickMs);
+    expect(c.player.isAirborne, isTrue);
+
+    // The jump lands with ~400 ms left on it when the jab goes in — far
+    // longer than the buffer remembers, so it is forgotten long before the
+    // window it was waiting on could end.
+    run(c, rules.jumpMs - rules.tickMs * 26);
+    press(c, FighterId.player, InputAction.lightPunch, 2);
+
+    run(c, rules.jumpMs);
+    expect(c.player.isAirborne, isFalse);
+    expect(
+      c.player.action,
+      FighterAction.idle,
+      reason: 'a press made ~400 ms before the window ends is never replayed',
+    );
+  });
+
+  test('a jump pressed inside a recovery comes out as the window ends', () {
+    final c = MatchController();
+    final rules = c.rules;
+    final light = rules.lightAttack;
+    skipCountdown(c);
+
+    press(c, FighterId.player, InputAction.lightPunch, 1);
+    // Three ticks of the 190 ms recovery left.
+    run(c, light.totalMs - rules.tickMs * 3);
+    expect(c.player.isAttacking, isTrue);
+
+    press(c, FighterId.player, InputAction.jump, 2);
+    expect(
+      c.player.isAirborne,
+      isFalse,
+      reason: 'a jump cannot cancel a recovery, only wait it out',
+    );
+
+    run(c, rules.tickMs * 3);
+    expect(
+      c.player.isAirborne,
+      isTrue,
+      reason: 'the remembered jump comes out as the window ends',
+    );
+  });
+
+  test('a remembered press fires exactly once', () {
+    final c = MatchController();
+    final rules = c.rules;
+    final light = rules.lightAttack;
+    skipCountdown(c);
+
+    press(c, FighterId.player, InputAction.lightPunch, 1);
+    run(c, light.totalMs - rules.tickMs * 3);
+    press(c, FighterId.player, InputAction.lightPunch, 2);
+
+    // Every fresh jab shows a clock of 0 on the tick it starts. The first
+    // jab started before the loop; count the rest across 500 ms — longer
+    // than a whole jab runs — so a press that fired twice would show up as a
+    // third start.
+    var starts = 1;
+    for (var i = 0; i < 500 ~/ rules.tickMs; i++) {
+      c.tick(rules.tickMs / 1000);
+      if (c.player.action == FighterAction.lightPunch &&
+          c.player.actionElapsedMs == 0) {
+        starts++;
+      }
+    }
+
+    expect(starts, 2, reason: 'the remembered press fires once, never twice');
+    expect(
+      c.drainHitEvents().where((event) => event.attacker == FighterId.player),
+      hasLength(2),
+      reason: 'two swings happened, and exactly two',
+    );
   });
 
   test('an attack is a committed window: recovery cannot be cancelled', () {
@@ -439,6 +586,45 @@ void main() {
     }
 
     expect(script(MatchController()), script(MatchController()));
+  });
+
+  test('a remembered press replays identically', () {
+    /// Same commands, same ticks — a script whose key moment is a press that
+    /// only becomes real when the recovery it landed in ends. The age walks
+    /// in whole match-time ticks, so nothing about it may drift between runs
+    /// the way a wall-clock buffer would.
+    List<Object?> script(MatchController c) {
+      final rules = c.rules;
+      final light = rules.lightAttack;
+      skipCountdown(c);
+      closeIn(c);
+      press(c, FighterId.player, InputAction.lightPunch, 1);
+      run(c, light.totalMs - rules.tickMs * 5);
+      press(c, FighterId.player, InputAction.heavyKick, 2);
+      run(c, 600);
+
+      return <Object?>[
+        c.player.x,
+        c.player.action,
+        c.player.actionElapsedMs,
+        c.rival.x,
+        c.rival.health,
+        c.rival.action,
+        c.timeRemainingMs,
+        for (final event in c.drainHitEvents()) '${event.kind}/${event.heavy}',
+      ];
+    }
+
+    final first = script(MatchController());
+    // The script has to be the interesting one: the heavy is still swinging
+    // when the dust settles, which only happens if the remembered press
+    // actually came out. `[1]` is the player's action in the list above.
+    expect(
+      first[1],
+      FighterAction.heavyKick,
+      reason: 'the remembered heavy fired out of the buffer',
+    );
+    expect(script(MatchController()), first);
   });
 
   test('an out-of-reach swing deals no damage, from either side', () {
