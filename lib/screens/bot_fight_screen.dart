@@ -566,12 +566,15 @@ class _TimerChip extends StatelessWidget {
     final match = game.match;
     var label = 'END';
     var opacity = 1.0;
+    // -1 when no countdown is running, so the round marker can tell.
+    var beatIndex = -1;
     if (match.phase == MatchPhase.countdown) {
       final beatMs = match.rules.countdownMs ~/ _countdownBeats;
       final index = ((match.countdownRemainingMs - 1) ~/ beatMs).clamp(
         0,
         _countdownBeats - 1,
       );
+      beatIndex = index;
       label = switch (index) {
         3 => '3',
         2 => '2',
@@ -614,6 +617,25 @@ class _TimerChip extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Which round is about to start, stamped in above the beat and
+            // cleared on FIGHT! so the two never compete for the same space.
+            if (beatIndex > 0)
+              TweenAnimationBuilder<double>(
+                key: ValueKey('round-marker-${match.roundNumber}'),
+                tween: Tween<double>(begin: 1.06, end: 1.0),
+                duration: const Duration(milliseconds: 180),
+                builder: (context, scale, child) =>
+                    Transform.scale(scale: scale, child: child),
+                child: Text(
+                  'ROUND ${match.roundNumber}',
+                  style: const TextStyle(
+                    color: InkColors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .4,
+                  ),
+                ),
+              ),
             Text(
               label,
               style: const TextStyle(

@@ -1978,4 +1978,70 @@ void main() {
       expect(fx.dropletCount, 0);
     });
   });
+
+  group('arena wear (paint only, round-driven)', () {
+    test('a single-round match never wears', () {
+      final fx = atmosphere();
+      fx.observeRound(1, 1);
+      expect(fx.wearLevel, 0);
+      fx.observeRound(1, 1);
+      expect(fx.wearStainCount, 0);
+    });
+
+    test('wear deepens with the round and never goes backwards', () {
+      final fx = atmosphere();
+      fx.observeRound(1, 2);
+      expect(fx.wearLevel, 0, reason: 'the first round starts on clean paper');
+      expect(fx.wearStainCount, 0);
+
+      fx.observeRound(2, 2);
+      expect(fx.wearLevel, 1);
+      final stains = fx.wearStainCount;
+      expect(stains, greaterThan(0));
+
+      // Re-presenting the same round must not add or remove ink.
+      fx.observeRound(2, 2);
+      fx.observeRound(2, 2);
+      expect(
+        fx.wearStainCount,
+        stains,
+        reason: 'the same round cannot deepen or lighten the wear',
+      );
+    });
+
+    test('a new match clears the wear, a new round does not', () {
+      final fx = atmosphere();
+      fx.observeRound(1, 3);
+      fx.observeRound(2, 3);
+      fx.observeRound(3, 3);
+      expect(fx.wearLevel, 1);
+      expect(fx.wearStainCount, ArenaAtmosphere.maxWearStains);
+
+      // Between rounds the paper keeps what the match earned.
+      fx.reset();
+      expect(
+        fx.wearStainCount,
+        ArenaAtmosphere.maxWearStains,
+        reason: 'reset() is between rounds, not between matches',
+      );
+      expect(fx.markCount, 0, reason: 'but transient marks do go');
+
+      // A new match presents a lower round than the match has ever seen.
+      fx.observeRound(1, 3);
+      expect(fx.wearLevel, 0);
+      expect(fx.wearStainCount, 0);
+    });
+
+    test('wear is bounded and never exceeds the stain cap', () {
+      final fx = atmosphere();
+      for (var round = 1; round <= 12; round++) {
+        fx.observeRound(round, 2);
+      }
+      expect(fx.wearLevel, 1);
+      expect(
+        fx.wearStainCount,
+        lessThanOrEqualTo(ArenaAtmosphere.maxWearStains),
+      );
+    });
+  });
 }

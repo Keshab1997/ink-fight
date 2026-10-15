@@ -19,6 +19,13 @@ class ArenaAtmosphere {
   ArenaAtmosphere() : _grain = _recordGrain();
 
   static const int maxMarks = 24;
+
+  /// Round-driven wear: how many permanent stains the floor carries by the
+  /// final round, and how much heavier the vignette gets. Restrained on
+  /// purpose — the arena should look TIRED at the end of a match, not dirty.
+  static const int maxWearStains = 10;
+  static const double _wearVignetteMax = .05;
+
   static const double flashMs = 60;
   static const double _retireMs = 400;
   static const ui.Color _ink = ui.Color(0xFF101010);
@@ -41,6 +48,16 @@ class ArenaAtmosphere {
   final ArenaPhysicalPaint _physical = ArenaPhysicalPaint();
   final math.Random _random = math.Random(71);
   final List<_FloorDot> _dots = <_FloorDot>[];
+
+  /// Stains the match has EARNED. Unlike [_dots] these never fade — that is
+  /// the whole point of wear: the room remembers. Cleared only when a new
+  /// match starts (the round number going backwards), never by [reset].
+  final List<_FloorDot> _wearDots = <_FloorDot>[];
+
+  /// The highest round seen this match. Wear is monotonic: it can only deepen.
+  int _wearRound = 1;
+  int _roundsToWin = 2;
+
   final Map<FighterId, double> _flash = <FighterId, double>{};
 
   static ui.Picture _recordGrain() {
@@ -73,17 +90,84 @@ class ArenaAtmosphere {
     canvas.scale(viewport.width, viewport.height);
     canvas.drawPicture(_grain ??= _recordGrain());
     // Elliptical falloff: quiet centre, softly shaded edges, no coloured tint.
+    // Wear closes it in a little as the match goes on — the room should feel
+    // smaller by the last round, never darker than the fighters.
     canvas.drawRect(
       const ui.Rect.fromLTWH(0, 0, 1, 1),
       ui.Paint()
         ..shader = ui.Gradient.radial(
           const ui.Offset(.5, .52),
           .68,
-          <ui.Color>[_ink.withValues(alpha: 0), _ink.withValues(alpha: .07)],
+          <ui.Color>[
+            _ink.withValues(alpha: 0),
+            _ink.withValues(alpha: .07 + wearLevel * _wearVignetteMax),
+          ],
           <double>[.38, 1],
         ),
     );
     canvas.restore();
+  }
+
+  /// Round-driven wear: the paper carries more ink and a heavier vignette as
+  /// the match goes on.
+  ///
+  /// The paint layer decides nothing about the rules — it only reads the round
+  /// number the controller already exposes. Wear is monotonic: it can only ever
+  /// deepen within a match. It is cleared when the round number goes BACKWARDS,
+  /// which is exactly what a new match does, so every new-match path is covered
+  /// without the game needing a second hook.
+  ///
+  /// Deliberately NOT driven by the clock: time passing is not the paper
+  /// getting marked, and a clock-driven version would fight the per-confirmed-
+  /// hit residue that already exists.
+  void observeRound(int roundNumber, int roundsToWin) {
+    if (roundsToWin > 0) {
+      _roundsToWin = roundsToWin;
+    }
+    if (roundNumber < _wearRound) {
+      // A round lower than any we have seen means the controller was reset:
+      // that is a new match, and a new match gets clean paper.
+      _wearRound = 1;
+      _wearDots.clear();
+      return;
+    }
+    if (roundNumber > _wearRound) {
+      _wearRound = roundNumber;
+      _seedWearStains();
+    }
+  }
+
+  /// 0 in the first round — and always 0 in a single-round match, which has
+  /// nothing to wear. 1 in a match-deciding final round.
+  double get wearLevel {
+    if (_roundsToWin <= 1) {
+      return 0;
+    }
+    return ((_wearRound - 1) / (_roundsToWin - 1)).clamp(0.0, 1.0);
+  }
+
+  @visibleForTesting
+  int get wearStainCount => _wearDots.length;
+
+  /// Spread deterministically across the floor: same match, same stains, same
+  /// order. No RNG in the update path.
+  void _seedWearStains() {
+    final target = (wearLevel * maxWearStains).round();
+    while (_wearDots.length < target) {
+      final i = _wearDots.length;
+      _wearDots.add(
+        _FloorDot(
+          xShare: (0.11 + i * 0.2718) % 1.0,
+          dxShare: 0,
+          dyShare: 0,
+          radiusShare: 0.05 + ((i * 7) % 5) * 0.012,
+          colour: _grey,
+          opacity: 0.16,
+          // Wear is the one ink the match keeps: it never retires.
+          fadeLifeMs: double.infinity,
+        ),
+      );
+    }
   }
 
   /// Event x remains in arena coordinates; resize maps existing stains onto
@@ -297,7 +381,11 @@ class ArenaAtmosphere {
     }
     canvas.save();
     canvas.clipRect(ui.Offset.zero & viewport);
-    for (final dot in _dots.followedBy(_footDots).followedBy(_scars)) {
+    for (final dot
+        in _dots
+            .followedBy(_footDots)
+            .followedBy(_scars)
+            .followedBy(_wearDots)) {
       if (dot.scarFacing != null) {
         _renderScar(canvas, dot, viewport.width, floorY, fighterHeight);
         continue;
@@ -445,6 +533,10 @@ class ArenaAtmosphere {
     _grain = null;
   }
 
+  /// Between ROUNDS, not between matches: every transient scrap of feel state
+  /// goes, but the wear the match has earned stays (see [observeRound]). A new
+  /// match clears it by presenting a lower round number, which is something
+  /// every new-match path does, so there is no second hook to forget.
   void reset() {
     _physical.reset();
     _gravity.reset();

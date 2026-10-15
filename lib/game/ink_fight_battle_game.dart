@@ -642,6 +642,9 @@ class InkFightBattleGame extends FlameGame {
       super.update(dt);
       return;
     }
+    // The paint layer reads the round the controller is on and decides nothing
+    // about it: wear deepens as the match goes on and clears on a new match.
+    _atmosphere.observeRound(_match.roundNumber, _match.rules.roundsToWin);
     _atmosphere.update(dt);
     final realMs = dt * 1000;
 

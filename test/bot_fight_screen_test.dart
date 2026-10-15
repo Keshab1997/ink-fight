@@ -180,7 +180,11 @@ void main() {
     expect(find.text('REMATCH'), findsNothing);
     // This single-round fixture starts the normal countdown at once.
     expect(find.text('3'), findsOneWidget);
-    expect(find.textContaining(RegExp(r'ROUND \d+')), findsNothing);
+    // The countdown now announces the round it is starting — and a rematch of
+    // this single-round fixture is round 1 again, never a stale round.
+    expect(game.match.roundNumber, 1);
+    expect(find.text('ROUND 1'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'ROUND [2-9]')), findsNothing);
     expect(find.text('100%'), findsNWidgets(2));
     expect(game.match.phase, MatchPhase.countdown);
     // A rematch drops the cinema with the rest of the feel state.
@@ -2065,7 +2069,7 @@ void main() {
   });
 
   testWidgets(
-    'rematches start the existing countdown without round stamps or extra sting',
+    'rematches start the existing countdown on round 1, with no extra sting',
     (tester) async {
       final sounds = _RecordingFightSounds();
       final game = await mountFight(tester, sounds: sounds);
@@ -2081,7 +2085,11 @@ void main() {
         sounds.cues.clear();
         await tester.tap(find.text('REMATCH'));
         await tester.pump();
-        expect(find.textContaining(RegExp(r'ROUND \d+')), findsNothing);
+        // The round marker reads the controller, so a rematch is round 1
+        // again — and no stale round number from the last match survives.
+        expect(game.match.roundNumber, 1);
+        expect(find.text('ROUND 1'), findsOneWidget);
+        expect(find.textContaining(RegExp(r'ROUND [2-9]')), findsNothing);
         expect(find.text('3'), findsOneWidget);
         expect(find.text('FIGHT!'), findsNothing);
         expect(game.match.phase, MatchPhase.countdown);
@@ -2111,5 +2119,69 @@ void main() {
     expect(find.text('CRIMSON RIVAL'), findsOneWidget);
     expect(game.match.phase, MatchPhase.fighting);
     expect(tester.takeException(), isNull);
+  });
+
+  group('round marker', () {
+    testWidgets(
+      'the countdown announces the round it is starting, then clears on FIGHT!',
+      (tester) async {
+        final game = await mountFight(tester, rules: MatchRules.standard);
+        await tester.tap(find.text('GOT IT'));
+        await tester.pump();
+        game.pauseEngine(); // drive the rules without bot input
+
+        // Round 1's own countdown announces round 1.
+        expect(game.match.phase, MatchPhase.countdown);
+        expect(find.text('ROUND 1'), findsOneWidget);
+
+        // Run to the FIGHT! beat: the marker must yield the space to it.
+        while (game.match.countdownRemainingMs >
+            game.match.rules.countdownMs ~/ 4) {
+          game.match.tick(.016);
+        }
+        game.update(.001);
+        await tester.pump(const Duration(milliseconds: 1));
+        await tester.pump();
+        expect(find.text('FIGHT!'), findsOneWidget);
+        expect(
+          find.text('ROUND 1'),
+          findsNothing,
+          reason: 'the marker clears on FIGHT! so the two never share space',
+        );
+      },
+    );
+
+    testWidgets('reads the real round number, never a hard-coded one', (
+      tester,
+    ) async {
+      final game = await mountFight(tester, rules: MatchRules.standard);
+      await tester.tap(find.text('GOT IT'));
+      await tester.pump();
+      game.pauseEngine();
+
+      // Play the first round out; the next countdown must announce round 2.
+      while (game.match.countdownRemainingMs > 0) {
+        game.match.tick(.016);
+      }
+      var guard = 0;
+      while (!game.match.isFinished &&
+          game.match.roundNumber == 1 &&
+          guard++ < 5000) {
+        game.match.tick(.016);
+      }
+      game.update(.001);
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
+
+      if (game.match.roundNumber == 2) {
+        expect(game.match.phase, MatchPhase.countdown);
+        expect(
+          find.text('ROUND 2'),
+          findsOneWidget,
+          reason: 'the marker follows the controller, not a literal',
+        );
+        expect(find.text('ROUND 1'), findsNothing);
+      }
+    });
   });
 }
