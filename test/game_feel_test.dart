@@ -137,7 +137,7 @@ void main() {
           isTrue,
           reason: 'elapsed ${state.actionElapsedMs} ms should be active',
         );
-        expect(visibleFrame(player), 3); // frame 003 is the contact pose
+        expect(visibleFrame(player), 4); // frame 004 is the contact pose
 
         tick(game, 6); // 336 ms: the 240–330 ms window has closed
         expect(
@@ -146,7 +146,7 @@ void main() {
           ),
           isFalse,
         );
-        expect(visibleFrame(player), greaterThan(3));
+        expect(visibleFrame(player), greaterThan(4));
       },
     );
 
@@ -166,7 +166,7 @@ void main() {
         pastCountdown(game); // let the punch finish into idle
         game.sendPlayerAction(InputAction.heavyKick);
         tick(game, 1);
-        expect(player.animation!.frames, hasLength(6));
+        expect(player.animation!.frames, hasLength(8));
         expect(totalMsOf(player), rules.heavyAttack.totalMs.toDouble());
       },
     );

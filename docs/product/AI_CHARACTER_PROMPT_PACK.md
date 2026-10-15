@@ -87,14 +87,16 @@ screen for exactly the 90–160 ms active window. A launch drawn at full
 extension was rejected: the longer arm widens the bounding box, so the body
 flickered 44 px backwards for one frame.
 
-### Heavy kick — 6 frames
+### Heavy kick — 8 frames
 
 - `heavy_kick_000`: low stance with clear wind-up, kicking knee beginning to rise.
 - `heavy_kick_001`: knee high, torso leaning slightly, face visible.
-- `heavy_kick_002`: leg extending with a strong diagonal silhouette and controlled ink trail.
-- `heavy_kick_003`: full extension contact frame, body and face still readable.
-- `heavy_kick_004`: leg retracting, arms balancing the motion.
-- `heavy_kick_005`: exact ready stance recovery, feet on baseline.
+- `heavy_kick_002` (in-between, §5b): the kick unfolding. The knee is at chest height and points right, the shin swings out toward horizontal so the foot is at hip height in front of him (leg half extended, knee at roughly 120°), the supporting leg straightens and the torso starts to lean back; front glove at the chin, rear glove low. No swoosh. The player's is foot-registered (§5b).
+- `heavy_kick_003`: leg extending with a strong diagonal silhouette and controlled ink trail.
+- `heavy_kick_004`: full extension contact frame, body and face still readable.
+- `heavy_kick_005` (in-between, §5b): straight after contact. The kicking leg folds back at the knee, the foot still high but the shin coming in; the torso rises back upright and the arms balance in guard. No swoosh, no impact burst.
+- `heavy_kick_006`: leg retracting, arms balancing the motion.
+- `heavy_kick_007`: exact ready stance recovery, feet on baseline.
 
 ### Block — 4 frames
 
@@ -168,11 +170,12 @@ centre; for the player, look at which side the face and the leading fist are on.
 A mirrored frame is unusable — in-game the rival is mirrored again to face the
 player, and a flipped frame leaves him punching backwards.
 
-**Known mirrored keyframe.** `bot_crimson_rival_heavy_kick_003` (the contact
-frame) fails this check: the kick, the impact burst and the scarf all point the
-wrong way, so in-game the rival kicks away from the player for the 90 ms active
-window. Not fixed yet (regenerate it facing right). Until then, an in-between
-next to it uses a horizontally flipped copy as its neighbour reference.
+**Known mirrored keyframe.** `bot_crimson_rival_heavy_kick_004` (the contact
+frame; it was `_003` before the in-betweens) fails this check: the kick, the
+impact burst and the scarf all point the wrong way, so in-game the rival kicks
+away from the player for the 90 ms active window. Not fixed yet (regenerate it
+facing right). Until then, an in-between next to it uses a horizontally flipped
+copy as its neighbour reference, as the rival's `heavy_kick_005` did.
 
 ## 5b. In-between frames — densifying the delivered cycles
 
@@ -211,6 +214,20 @@ carries the weight. That foot must stay within the same 15 px of the
 neighbours' range, and its largest step must not grow beyond that tolerance.
 The head may travel, because in a kick or a recoil it really does.
 
+**Foot registration (when centring is the problem, not the drawing).** A frame's
+planted foot lands at 512 + (foot − box centre) × scale, so a pose whose box
+differs from its neighbours' gets slid sideways, however well it is drawn. That
+happens with a half-extended kick next to a crouch the tool scales up, a scarf a
+little longer than the next frame's, or a neighbour widened by an impact spark.
+Such frames are listed in `FOOT_REGISTERED` in `tool/process_character_assets.py`
+together with their two neighbours. After alignment, the tool shifts each one
+sideways so that its planted foot (the lowest 40 rows) lands halfway between
+theirs. The art stays untouched AI output, and every unlisted frame stays
+byte-identical. A frame is listed only when plain centring puts its foot clearly
+outside the gate, and only if registration does not make its total silhouette
+change against the two neighbours materially worse (by more than 0.05).
+Otherwise it keeps plain centring.
+
 What the gate measured on the frames that landed (largest head jump per frame
 step / mean silhouette change, before → after):
 
@@ -220,10 +237,19 @@ step / mean silhouette change, before → after):
 | walk | 8 px / 0.18 → 8 px / 0.15 | 40 px / 0.25 → 42 px / 0.22 |
 | light punch | 86 px / 0.28 → 52 px / 0.29 | 35 px / 0.25 → 42 px / 0.22 |
 | hurt | 56 px / 0.68 → 72 px / 0.52 ¹ | 14 px / 0.33 → 49 px / 0.26 ¹ |
+| heavy kick | 177 px / 0.44 → 216 px / 0.45 ² | 155 px / 0.36 → 155 px / 0.32 ³ |
 
 ¹ Here the head measure includes the gloves thrown up by the hit. The planted
 feet stay inside the old frames' spread on every frame; the rival's stay within
 ±10 px on all five. So the head number is not body travel.
+
+² Judge this by the planted foot: its largest step halves, from 108 to 55 px
+(with `heavy_kick_002` foot-registered; plain centring would have put it at
+173 px). The silhouette mean does not move. Delivered frames 000 and 001 are
+identical, and registering 002 trades 0.57 + 0.57 against its neighbours for
+0.67 + 0.50. The head measure picks up the kicking leg.
+³ Both largest steps are the jump into and out of the mirrored contact keyframe
+(above). The in-betweens do not change it.
 
 Rejected, with the measurement: the player's idle 002 → 003 in-between, four
 attempts. Twice the scarf came out longer than in frame 003 (the largest head
@@ -234,15 +260,13 @@ outer edge of the rear glove"). Fix lengths and directions explicitly like
 that; "halfway" alone is not enough.
 
 A fifth attempt at that frame drew the scarf horizontal as asked, but again
-longer than frame 003 (head jump 13 → 42 px). The player's heavy-kick 001 → 002
-in-between failed twice. The first attempt returned frame 001 unchanged
-(silhouette distance 0.00); name the pose's geometry and say "not a copy of
-either input". The second drew the right pose, but alignment put its planted
-foot 96 px past frame 002's (foot path 299 → 472 → 376 px; the largest step
-grew from 108 to 173 px), a forward-and-back lurch in the wind-up. Both
-failures come from centring on the bounding box rather than on the feet, not
-from the drawing. The heavy-kick recipe is shared by both fighters, so that
-cycle stays at six frames until every one of its in-betweens passes for both.
+longer than frame 003 (head jump 13 → 42 px). The player's heavy-kick unfolding
+in-between failed once outright: it returned frame 001 unchanged (silhouette
+distance 0.00). Name the pose's geometry and say "not a copy of either input".
+The second attempt drew the right pose, but plain centring put its planted foot
+96 px past the extension frame's (foot path 299 → 472 → 376 px), a
+forward-and-back lurch in the wind-up. That is the case foot registration
+exists for, and it is the frame that landed.
 
 **Haze.** A generation can leave a faint grey ground smudge under a lifted foot
 (the rival's `walk_002` did). `tool/process_character_assets.py` now clears any

@@ -30,9 +30,12 @@ import 'stats/match_stats.dart';
 /// guard and the recovery share the 190 ms that is left.
 const List<int> _kLightPunchStepsMs = <int>[30, 30, 30, 70, 65, 60, 65];
 
-/// §1 heavy kick: 80 + 80 + 80 + 90 + 170 + 170 = 670 ms =
-/// `heavyAttack.totalMs`. Frame 003 (contact) holds the 240–330 ms window.
-const List<int> _kHeavyKickStepsMs = <int>[80, 80, 80, 90, 170, 170];
+/// §1 heavy kick, per delivered frame: 60 + 60 + 60 + 60 + 90 + 100 + 120 +
+/// 120 = 670 ms = `heavyAttack.totalMs`. Wind-up, lift, the unfolding
+/// in-between and the extension share the 240 ms startup; frame 004 (contact)
+/// holds exactly the 240–330 ms active window; the fold-back in-between, the
+/// recoil and the recovery share the 340 ms that is left.
+const List<int> _kHeavyKickStepsMs = <int>[60, 60, 60, 60, 90, 100, 120, 120];
 
 /// §1 hurt (a light punch landed). The keyframes keep their beats — recoil 000
 /// at 0 ms, stagger 002 at 70 ms, recovered 004 at 150 ms — and the in-betweens

@@ -41,16 +41,18 @@ recipes derived from `MatchRules.standard` — no uniform `stepTime`.
 | 005 | back toward guard (in-between) | 60 ms | recovery |
 | 006 | recovery | 65 ms | recovery → back to idle |
 
-**heavy_kick — 6 frames, 670 ms total** (startup 240 / active 90 / recovery 340):
+**heavy_kick — 8 frames, 670 ms total** (startup 240 / active 90 / recovery 340):
 
 | Frame | Pose | Holds for | Window |
 |---|---|---|---|
-| 000 | wind-up | 80 ms | startup |
-| 001 | lift | 80 ms | startup |
-| 002 | extension | 80 ms | startup (hitbox opens at 240 ms) |
-| 003 | **contact** | **90 ms** | active |
-| 004 | recoil | 170 ms | recovery |
-| 005 | recovery | 170 ms | recovery → idle |
+| 000 | wind-up | 60 ms | startup |
+| 001 | lift | 60 ms | startup |
+| 002 | unfolding (in-between) | 60 ms | startup |
+| 003 | extension | 60 ms | startup (hitbox opens at 240 ms) |
+| 004 | **contact** | **90 ms** | active — the hitbox is open exactly here |
+| 005 | folding back (in-between) | 100 ms | recovery |
+| 006 | recoil | 120 ms | recovery |
+| 007 | recovery | 120 ms | recovery → idle |
 
 Other cycles: **block** (raise 90 ms → loop frames 1–2 at 140 ms while the
 guard is held → release 120 ms) · **hurt** (5 frames: recoil 000 at 0,

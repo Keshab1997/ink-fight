@@ -24,6 +24,23 @@ MAX_CHARACTER_SIZE = 860
 HAZE_MIN_PIXELS = 200
 HAZE_MIN_LUMINANCE = 180
 
+# In-betweens that bounding-box centring would misplace are registered on the
+# planted foot instead. A scarf drawn longer than the neighbours', or a kick
+# only half extended, moves the bounding box, and centring it then slides the
+# whole body sideways. A listed frame is shifted sideways after alignment so
+# that the centre of its lowest FOOT_BAND_ROWS rows lands halfway between its
+# two neighbours' (docs/product/AI_CHARACTER_PROMPT_PACK.md §5b). The art is
+# not touched; only its place on the canvas changes. Unlisted frames keep the
+# plain bounding-box centring, byte for byte.
+FOOT_BAND_ROWS = 40
+FOOT_REGISTERED: dict[str, tuple[str, str]] = {
+    # in-between: (frame before, frame after)
+    "player_ink_fighter_heavy_kick_002.png": (
+        "player_ink_fighter_heavy_kick_001.png",
+        "player_ink_fighter_heavy_kick_003.png",
+    ),
+}
+
 
 def is_background(pixel: tuple[int, int, int, int]) -> bool:
     red, green, blue, alpha = pixel
@@ -117,7 +134,7 @@ def remove_detached_haze(image: Image.Image) -> Image.Image:
     return image
 
 
-def align_to_runtime_canvas(image: Image.Image) -> Image.Image:
+def align_to_runtime_canvas(image: Image.Image, shift_x: int = 0) -> Image.Image:
     alpha = image.getchannel("A")
     bbox = alpha.getbbox()
     if bbox is None:
@@ -135,15 +152,44 @@ def align_to_runtime_canvas(image: Image.Image) -> Image.Image:
         )
 
     output = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
-    x = (CANVAS - cropped.width) // 2
+    x = (CANVAS - cropped.width) // 2 + shift_x
     y = BASELINE_Y - cropped.height
+    if x < 0 or x + cropped.width > CANVAS:
+        raise ValueError("the registration shift pushes the frame off the canvas")
     output.alpha_composite(cropped, (x, y))
     return output
 
 
-def process_frame(source: Path, destination: Path) -> None:
+def planted_foot_x(image: Image.Image) -> float:
+    """Mean x of the solid pixels in the lowest FOOT_BAND_ROWS rows of a frame."""
+    alpha = image.getchannel("A")
+    bottom = alpha.getbbox()[3] - 1
+    top = max(bottom - FOOT_BAND_ROWS, 0)
+    band = alpha.crop((0, top, image.width, bottom + 1)).tobytes()
+    xs = [i % image.width for i, value in enumerate(band) if value > 128]
+    return sum(xs) / len(xs)
+
+
+def runtime_frame(source: Path, shift_x: int = 0) -> Image.Image:
     cleaned = remove_detached_haze(remove_border_background(Image.open(source)))
-    runtime = align_to_runtime_canvas(cleaned)
+    return align_to_runtime_canvas(cleaned, shift_x)
+
+
+def registration_shift(source: Path) -> int:
+    """Sideways shift that lands a FOOT_REGISTERED frame between its neighbours."""
+    neighbours = FOOT_REGISTERED.get(source.name)
+    if neighbours is None:
+        return 0
+    if any(name in FOOT_REGISTERED for name in neighbours):
+        raise ValueError(f"{source.name}: a neighbour is itself foot-registered")
+    target = sum(
+        planted_foot_x(runtime_frame(source.with_name(name))) for name in neighbours
+    ) / len(neighbours)
+    return round(target - planted_foot_x(runtime_frame(source)))
+
+
+def process_frame(source: Path, destination: Path) -> None:
+    runtime = runtime_frame(source, registration_shift(source))
     destination.parent.mkdir(parents=True, exist_ok=True)
     runtime.save(destination, format="PNG", optimize=True)
 
