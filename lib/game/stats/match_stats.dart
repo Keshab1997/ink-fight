@@ -11,6 +11,7 @@ class MatchStats extends ChangeNotifier {
   int _blocks = 0;
   int _combo = 0;
   int _maxCombo = 0;
+  int _hitPitchCombo = 0;
 
   int get hitsLanded => _hitsLanded;
 
@@ -19,11 +20,17 @@ class MatchStats extends ChangeNotifier {
   int get combo => _combo;
   int get maxCombo => _maxCombo;
 
+  /// Context for the cue immediately following onHit in the arena's drain.
+  /// Never lends the player's streak to a rival's hit or a blocked/whiff cue.
+  int get hitPitchCombo => _hitPitchCombo;
+
   void onHit(HitEvent event) {
+    _hitPitchCombo = 0;
     var changed = false;
     if (event.kind == HitKind.hit && event.attacker == FighterId.player) {
       _hitsLanded++;
       _combo++;
+      _hitPitchCombo = _combo;
       if (_combo > _maxCombo) {
         _maxCombo = _combo;
       }
@@ -50,6 +57,7 @@ class MatchStats extends ChangeNotifier {
     _blocks = 0;
     _combo = 0;
     _maxCombo = 0;
+    _hitPitchCombo = 0;
     notifyListeners();
   }
 }

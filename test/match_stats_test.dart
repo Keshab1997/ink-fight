@@ -77,6 +77,50 @@ void main() {
     expect(notified, isTrue);
   });
 
+  test(
+    'pitch context follows the current resolved player hit, not the rival',
+    () {
+      final stats = MatchStats();
+      addTearDown(stats.dispose);
+      stats.onHit(event(FighterId.player, HitKind.hit));
+      expect(stats.hitPitchCombo, 1);
+      stats.onHit(event(FighterId.player, HitKind.hit));
+      expect(stats.hitPitchCombo, 2);
+      stats.onHit(event(FighterId.rival, HitKind.whiff));
+      expect(stats.combo, 2);
+      expect(stats.hitPitchCombo, 0);
+      stats.onHit(event(FighterId.player, HitKind.hit));
+      expect(stats.hitPitchCombo, 3);
+      stats.onHit(event(FighterId.player, HitKind.whiff));
+      expect(stats.hitPitchCombo, 0);
+      stats.onHit(event(FighterId.player, HitKind.hit));
+      expect(stats.hitPitchCombo, 1);
+      stats.onHit(event(FighterId.rival, HitKind.hit));
+      expect(
+        stats.hitPitchCombo,
+        0,
+        reason: 'the rival never borrows the streak',
+      );
+      expect(stats.combo, 0);
+      stats.onHit(event(FighterId.player, HitKind.hit));
+      expect(stats.hitPitchCombo, 1);
+      stats.reset();
+      expect(stats.hitPitchCombo, 0);
+    },
+  );
+
+  test('pitch context clears on guards even when a streak survives', () {
+    final stats = MatchStats();
+    addTearDown(stats.dispose);
+    stats.onHit(event(FighterId.player, HitKind.hit));
+    stats.onHit(event(FighterId.player, HitKind.hit));
+    for (final attacker in FighterId.values) {
+      stats.onHit(event(attacker, HitKind.blocked));
+      expect(stats.hitPitchCombo, 0);
+      expect(stats.combo, 2);
+    }
+  });
+
   test('10 through 4 tick; 3 through 1 blip, one cue per displayed second', () {
     final clock = MatchClockCues();
     expect(clock.update(MatchPhase.fighting, 10001), isNull);

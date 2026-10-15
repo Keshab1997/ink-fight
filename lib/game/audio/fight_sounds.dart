@@ -93,12 +93,30 @@ class FightSoundVariation {
     _ => false,
   };
 
-  static FightSoundVariation sample(FightCue cue, Random random) {
+  static bool isHit(FightCue cue) =>
+      cue == FightCue.hitLight || cue == FightCue.hitHeavy;
+
+  /// The first hit is neutral; the next four add five percentage points
+  /// each, capped at +20%. Per-play jitter remains centred on that step.
+  static double comboLift(FightCue cue, int combo) =>
+      isHit(cue) ? (combo - 1).clamp(0, 4) * .05 : 0;
+
+  /// Warm bins include the escalation ceiling plus the old +/-4% jitter.
+  /// 2% spacing avoids a cold source change on the escalating hit frame.
+  static List<double> pitchRates(FightCue cue) => isHit(cue)
+      ? List<double>.generate(15, (i) => .96 + i * .02)
+      : const [.96, .98, 1.0, 1.02, 1.04];
+
+  static FightSoundVariation sample(
+    FightCue cue,
+    Random random, {
+    int combo = 0,
+  }) {
     if (!varies(cue)) {
       return FightSoundVariation(1, cue == FightCue.clockTick ? .5 : .8);
     }
     return FightSoundVariation(
-      1 + (random.nextDouble() * 2 - 1) * .04,
+      1 + comboLift(cue, combo) + (random.nextDouble() * 2 - 1) * .04,
       .8 * (1 + (random.nextDouble() * 2 - 1) * .1),
     );
   }
@@ -107,11 +125,15 @@ class FightSoundVariation {
 /// Preloaded, bounded voices per cue: source loading happens only in
 /// [warmUp], never on a hit frame. AudioPool.start exposes volume but not
 /// playback rate. Worse, media players often preserve pitch when changing
-/// speed. Pre-resampling five tiny PCM variants in warmUp gives real pitch
+/// speed. Pre-resampling small PCM pitch banks in warmUp gives real pitch
 /// variation on every platform, with no decoding or source changes on a hit.
 /// Each voice owns its source, so overlapping hits cannot alter each other.
 class FlameFightSounds implements FightSounds {
-  const FlameFightSounds();
+  const FlameFightSounds({this.hitCombo});
+
+  /// Read synchronously at play time, after stats.onHit, not on a later HUD
+  /// tick. The cue API stays unchanged; no asset names leave this class.
+  final int Function()? hitCombo;
 
   /// One pool per cue, built by [warmUp] and shared process-wide — there is
   /// one audio device, and rebuilding the players on every screen mount would
@@ -120,8 +142,8 @@ class FlameFightSounds implements FightSounds {
   static final Random _random = Random();
   static Future<void>? _warming;
 
-  /// Fixed-pitch cues need only a pair. Physical cues get five independent
-  /// preloaded pitch bins; a stride, impact and whoosh can share a frame.
+  /// Fixed-pitch cues need only a pair. Physical cues use independent warm
+  /// pitch bins (15 for escalating hits, five for the other contacts).
   static int _voicesOf(FightCue cue) => switch (cue) {
     FightCue.stepTap => 4,
     FightCue.hitLight || FightCue.whooshLight => 3,
@@ -153,7 +175,15 @@ class FlameFightSounds implements FightSounds {
       return;
     }
     unawaited(
-      _startSafely(pool, cue, FightSoundVariation.sample(cue, _random)),
+      _startSafely(
+        pool,
+        cue,
+        FightSoundVariation.sample(
+          cue,
+          _random,
+          combo: FightSoundVariation.isHit(cue) ? hitCombo?.call() ?? 0 : 0,
+        ),
+      ),
     );
   }
 
@@ -168,8 +198,9 @@ class FlameFightSounds implements FightSounds {
       try {
         _pools[cue] = await _FightVoicePool.create(
           _fileOf(cue),
-          _voicesOf(cue),
-          varies: FightSoundVariation.varies(cue),
+          rates: FightSoundVariation.varies(cue)
+              ? FightSoundVariation.pitchRates(cue)
+              : List<double>.filled(_voicesOf(cue), 1),
         );
       } catch (error) {
         if (kDebugMode) {
@@ -208,15 +239,12 @@ class _FightVoicePool {
   final List<_FightVoice> voices;
 
   static Future<_FightVoicePool> create(
-    String file,
-    int count, {
-    required bool varies,
+    String file, {
+    required List<double> rates,
   }) async {
     final voices = <_FightVoice>[];
-    final rates = varies
-        ? const [.96, .98, 1.0, 1.02, 1.04]
-        : List<double>.filled(count, 1);
-    final data = varies ? await rootBundle.load('assets/audio/$file') : null;
+    final varied = rates.any((rate) => rate != 1);
+    final data = varied ? await rootBundle.load('assets/audio/$file') : null;
     final wav = data?.buffer.asUint8List(
       data.offsetInBytes,
       data.lengthInBytes,

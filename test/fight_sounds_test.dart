@@ -112,6 +112,76 @@ void main() {
     },
   );
 
+  test('player combo pitch rises in four 5% steps, then caps', () {
+    for (final cue in [FightCue.hitLight, FightCue.hitHeavy]) {
+      final base = FightSoundVariation.sample(cue, Random(42), combo: 1);
+      for (var combo = 1; combo <= 10; combo++) {
+        final play = FightSoundVariation.sample(cue, Random(42), combo: combo);
+        expect(
+          play.rate - base.rate,
+          closeTo(min(combo - 1, 4) * .05, .000001),
+        );
+        expect(play.rate, inInclusiveRange(.96, 1.24));
+        expect(
+          play.volume,
+          base.volume,
+          reason: 'escalation never boosts gain',
+        );
+      }
+      final reset = FightSoundVariation.sample(cue, Random(42), combo: 0);
+      expect(reset.rate, base.rate);
+    }
+  });
+
+  test('combo context does not escalate whooshes, guards or musical cues', () {
+    for (final cue in FightCue.values.where(
+      (cue) => !FightSoundVariation.isHit(cue),
+    )) {
+      final base = FightSoundVariation.sample(cue, Random(42));
+      final high = FightSoundVariation.sample(cue, Random(42), combo: 100);
+      expect(high.rate, base.rate);
+      expect(high.volume, base.volume);
+    }
+  });
+
+  test(
+    'warm hit banks cover escalation plus jitter with actual PCM shifts',
+    () async {
+      final asset = await rootBundle.load('assets/audio/hit_light.wav');
+      final original = asset.buffer.asUint8List(
+        asset.offsetInBytes,
+        asset.lengthInBytes,
+      );
+      for (final cue in [FightCue.hitLight, FightCue.hitHeavy]) {
+        final rates = FightSoundVariation.pitchRates(cue);
+        expect(rates, hasLength(15));
+        expect(rates.first, closeTo(.96, .000001));
+        expect(rates.last, closeTo(1.24, .000001));
+        for (final rate in rates) {
+          final variant = pitchShiftFightWav(original, rate);
+          expect(
+            (variant.length - 44) ~/ 2,
+            (((original.length - 44) ~/ 2) / rate).floor(),
+          );
+        }
+        final random = Random(1997);
+        for (var combo = 0; combo < 12; combo++) {
+          for (var i = 0; i < 30; i++) {
+            final target = FightSoundVariation.sample(
+              cue,
+              random,
+              combo: combo,
+            ).rate;
+            final error = rates
+                .map((rate) => (rate - target).abs())
+                .reduce(min);
+            expect(error, lessThanOrEqualTo(.010001));
+          }
+        }
+      }
+    },
+  );
+
   test('seeded variation is reproducible without changing cue API', () {
     final first = Random(42);
     final second = Random(42);
