@@ -19,6 +19,10 @@ from PIL import Image
 CANVAS = 1024
 BASELINE_Y = 900
 MAX_CHARACTER_SIZE = 860
+# A detached blob at least this big and at least this light on average is
+# generation haze (a grey ground smudge), not ink.
+HAZE_MIN_PIXELS = 200
+HAZE_MIN_LUMINANCE = 180
 
 
 def is_background(pixel: tuple[int, int, int, int]) -> bool:
@@ -61,6 +65,58 @@ def remove_border_background(image: Image.Image) -> Image.Image:
     return image
 
 
+def remove_detached_haze(image: Image.Image) -> Image.Image:
+    """Drop faint grey blobs that float free of the drawing.
+
+    A generation can leave a light-grey ground smudge under a lifted foot: too
+    dark for the near-white border fill, and not ink either. Every opaque blob
+    other than the largest one (the character) that is both big and light on
+    average is cleared. Ink drops are dark, so the scarf's flicks survive, and
+    none of the hand-cleaned frames has such a blob, so they come out unchanged.
+    """
+    width, height = image.size
+    alpha = image.getchannel("A").tobytes()
+    seen = bytearray(width * height)
+    blobs: list[list[int]] = []
+    for start in range(width * height):
+        if seen[start] or not alpha[start]:
+            continue
+        seen[start] = 1
+        blob = [start]
+        queue = deque(blob)
+        while queue:
+            index = queue.popleft()
+            x = index % width
+            for neighbour, inside in (
+                (index - 1, x > 0),
+                (index + 1, x < width - 1),
+                (index - width, index >= width),
+                (index + width, index < width * (height - 1)),
+            ):
+                if inside and not seen[neighbour] and alpha[neighbour]:
+                    seen[neighbour] = 1
+                    blob.append(neighbour)
+                    queue.append(neighbour)
+        blobs.append(blob)
+    if len(blobs) < 2:
+        return image
+
+    largest = max(blobs, key=len)
+    rgb = image.convert("RGB").tobytes()
+    pixels = image.load()
+    for blob in blobs:
+        if blob is largest or len(blob) < HAZE_MIN_PIXELS:
+            continue
+        total = sum(rgb[3 * i] + rgb[3 * i + 1] + rgb[3 * i + 2] for i in blob)
+        if total / (3 * len(blob)) < HAZE_MIN_LUMINANCE:
+            continue
+        for index in blob:
+            x, y = index % width, index // width
+            red, green, blue, _ = pixels[x, y]
+            pixels[x, y] = (red, green, blue, 0)
+    return image
+
+
 def align_to_runtime_canvas(image: Image.Image) -> Image.Image:
     alpha = image.getchannel("A")
     bbox = alpha.getbbox()
@@ -86,7 +142,7 @@ def align_to_runtime_canvas(image: Image.Image) -> Image.Image:
 
 
 def process_frame(source: Path, destination: Path) -> None:
-    cleaned = remove_border_background(Image.open(source))
+    cleaned = remove_detached_haze(remove_border_background(Image.open(source)))
     runtime = align_to_runtime_canvas(cleaned)
     destination.parent.mkdir(parents=True, exist_ok=True)
     runtime.save(destination, format="PNG", optimize=True)
