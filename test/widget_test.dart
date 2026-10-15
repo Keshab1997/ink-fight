@@ -428,6 +428,12 @@ void main() {
     }
     expect(find.text('REMATCH'), findsOneWidget);
 
+    // The match is decided, so stop the arena's loop BEFORE navigating.
+    // Leaving a live game running while unwinding the route means it keeps
+    // requesting frames, and the settle below ends up racing it.
+    game.pauseEngine();
+    await tester.pump();
+
     await tester.tap(find.text('LEAVE'));
     await tester.pumpAndSettle();
 

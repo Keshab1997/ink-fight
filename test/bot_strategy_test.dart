@@ -240,19 +240,29 @@ void main() {
     fight.skipCountdown();
 
     var previous = fight.match.player.health;
+    var round = fight.match.roundNumber;
     var hits = 0;
     for (var i = 0; i < 40 * 1000 ~/ rules.tickMs; i++) {
+      if (fight.match.isFinished) {
+        break;
+      }
       fight.step();
       final health = fight.match.player.health;
       final drop = previous - health;
       previous = health;
+      // A decided round hands both fighters a full bar again, so the drain is
+      // read per round: best of three means a KO decides a ROUND, and not
+      // always the match.
+      if (fight.match.roundNumber != round) {
+        round = fight.match.roundNumber;
+        continue;
+      }
       if (drop == 0) {
         continue;
       }
       hits++;
       if (health == 0) {
         // The last hit only has to take the rest of the bar.
-        expect(fight.match.isFinished, isTrue);
         expect(drop, lessThanOrEqualTo(rules.heavyAttack.damage));
         continue;
       }

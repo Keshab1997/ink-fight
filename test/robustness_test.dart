@@ -60,9 +60,18 @@ void _runToDecision(
   var playerHealth = rules.health;
   var rivalHealth = rules.health;
   var frame = 0;
+  var round = match.roundNumber;
   while (!match.isFinished) {
     _frame(match, playerBot, rivalBot, script[frame % script.length]);
     frame++;
+    // A decided round hands both fighters a full bar again, so "health drains
+    // and never climbs" is a PER-ROUND invariant now that a match is best of
+    // three. Restart the baselines at the boundary instead of failing there.
+    if (match.roundNumber != round) {
+      round = match.roundNumber;
+      playerHealth = rules.health;
+      rivalHealth = rules.health;
+    }
     for (final fighter in [match.player, match.rival]) {
       expect(
         fighter.x.isFinite,
