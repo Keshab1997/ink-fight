@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:inkfight/game/bot/bot_strategy.dart';
 import 'package:inkfight/game/ink_fight_battle_game.dart';
+import 'package:inkfight/game/rules/match_rules.dart';
 import 'package:inkfight/main.dart';
 import 'package:inkfight/screens/app_routes.dart';
 import 'package:inkfight/screens/bot_fight_screen.dart';
@@ -65,6 +66,66 @@ void main() {
     expect(find.text('BOT FIGHT'), findsOneWidget);
     expect(find.text('ONLINE 1V1'), findsOneWidget);
     expect(find.text('SETTINGS'), findsOneWidget);
+  });
+
+  testWidgets('the menu shows the two hero fighters at full vignette', (
+    tester,
+  ) async {
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsNWidgets(2));
+    expect(find.text('YOU'), findsOneWidget);
+    expect(find.text('CRIMSON RIVAL'), findsOneWidget);
+    expect(find.text('100%'), findsNWidgets(2));
+  });
+
+  testWidgets('the menu clock comes from the rules table', (tester) async {
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpAndSettle();
+
+    final totalSeconds = MatchRules.standard.roundMs ~/ 1000;
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+
+    expect(find.text('$minutes : $seconds'), findsOneWidget);
+  });
+
+  testWidgets('the menu does not overflow at 360x640', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rotate your device'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the menu does not overflow at small landscape 640x360', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 360);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the menu does not overflow at wide landscape 1600x720', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 720);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(InkFightApp(settings: InkSettings()));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('menu BOT FIGHT opens the difficulty picker', (tester) async {

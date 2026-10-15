@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../game/rules/match_rules.dart';
 import '../theme/app_theme.dart';
-import '../widgets/doodle_fighter_painter.dart';
 import 'app_routes.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -180,6 +180,20 @@ class _HeroCopy extends StatelessWidget {
 class _ArenaPreview extends StatelessWidget {
   const _ArenaPreview();
 
+  /// Vignette: this preview is a posed picture, not a live match, so both
+  /// health lines stand full. The bar is the table's own full health over
+  /// itself, so a tuning change cannot leave the menu showing a stale bar.
+  static const int _vignetteFull = MatchRules.standard.health;
+
+  /// The clock chip, read from the table: a round is 60 seconds, so the chip
+  /// says `01 : 00` because the rules say so, not because the string is real.
+  static String _clockLabel() {
+    final totalSeconds = MatchRules.standard.roundMs ~/ 1000;
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes : $seconds';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -199,11 +213,36 @@ class _ArenaPreview extends StatelessWidget {
             left: 18,
             child: _Tag(label: 'BOT FIGHT / PRACTICE'),
           ),
-          const Positioned(top: 16, right: 18, child: _Tag(label: '01 : 00')),
-          const Positioned.fill(
+          Positioned(top: 16, right: 18, child: _Tag(label: _clockLabel())),
+          Positioned.fill(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(14, 24, 14, 42),
-              child: CustomPaint(painter: DoodleFightersPainter()),
+              padding: const EdgeInsets.fromLTRB(14, 24, 14, 42),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Expanded(
+                    child: Image.asset(
+                      'assets/ui/home_player_kick.png',
+                      fit: BoxFit.contain,
+                      alignment: Alignment.bottomCenter,
+                    ),
+                  ),
+                  Expanded(
+                    // A presentational mirror for the menu composition only:
+                    // the delivered pose faces right, and the preview wants
+                    // the two fighters squaring up. The art on disk is
+                    // untouched, and the arena keeps its regenerated frames.
+                    child: Transform.flip(
+                      flipX: true,
+                      child: const Image.asset(
+                        'assets/ui/home_rival_punch.png',
+                        fit: BoxFit.contain,
+                        alignment: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           Positioned(
@@ -212,7 +251,12 @@ class _ArenaPreview extends StatelessWidget {
             bottom: 14,
             child: Row(
               children: [
-                const Expanded(child: _HealthLine(label: 'YOU', value: .82)),
+                const Expanded(
+                  child: _HealthLine(
+                    label: 'YOU',
+                    value: _vignetteFull / MatchRules.standard.health,
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Container(
                   width: 28,
@@ -232,7 +276,12 @@ class _ArenaPreview extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(child: _HealthLine(label: 'BOT', value: .64)),
+                const Expanded(
+                  child: _HealthLine(
+                    label: 'CRIMSON RIVAL',
+                    value: _vignetteFull / MatchRules.standard.health,
+                  ),
+                ),
               ],
             ),
           ),
@@ -400,13 +449,19 @@ class _HealthLine extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: InkColors.inkSoft,
-                fontSize: 9,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.4,
+            // The rival's name is long; on a narrow preview it clips with an
+            // ellipsis instead of pushing the percentage off the strip.
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: InkColors.inkSoft,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4,
+                ),
               ),
             ),
             Text(
