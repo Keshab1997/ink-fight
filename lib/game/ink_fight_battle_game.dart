@@ -44,12 +44,14 @@ const List<int> _kHeavyKickStepsMs = <int>[60, 60, 60, 60, 90, 100, 120, 120];
 /// light stun does; it does not loop, so 004 holds if the stun runs longer.
 const List<int> _kHurtStepsMs = <int>[40, 30, 45, 35, 70];
 
-/// §1 hurt, heavy (a heavy kick landed): the four delivered frames, 420 ms =
-/// `heavyAttack.hitstunMs`. 000 is the impact peak (head snapped back, scarf
-/// flaring), so it gets 90 ms and reads as a snap; 001 is the recoil and 002
-/// the stagger, 120 ms each; 003 is back in a near-neutral stance and holds
-/// for the last 120 ms of the stun.
-const List<int> _kHurtHeavyStepsMs = <int>[90, 90, 120, 120];
+/// §1 hurt, heavy (a heavy kick landed): 420 ms = `heavyAttack.hitstunMs`.
+/// The keyframes keep their beats. 000 is the impact peak (head snapped back,
+/// scarf flaring), a 90 ms snap; 001, the maximum recoil, starts at 90 ms; 003,
+/// the skid, at 180 ms; 004, back in a near-neutral stance, at 300 ms, holding
+/// for the last 120 ms of the stun. The in-between 002 (out of the recoil into
+/// the skid) takes half of the recoil's old 90 ms. Not looping: 004 holds if
+/// the stun runs longer.
+const List<int> _kHurtHeavyStepsMs = <int>[90, 45, 45, 120, 120];
 
 /// §1 jump: takeoff 100, rise 150, apex 150, fall 160, landing 140 = 700 ms =
 /// `rules.jumpMs`, so the landing frame meets the ground.

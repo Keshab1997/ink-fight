@@ -6,8 +6,8 @@
   "characters": {
     "bot_crimson_rival": {
       "source_archive": "assets/characters/originals/bot_crimson_rival",
-      "frame_count": 62,
-      "expected_frame_count": 62,
+      "frame_count": 63,
+      "expected_frame_count": 63,
       "frames": [
         {
           "file": "bot_crimson_rival_block_000.png",
@@ -138,6 +138,11 @@
           "file": "bot_crimson_rival_hurt_heavy_003.png",
           "animation": "hurt_heavy",
           "runtime": "assets/characters/runtime/bot_crimson_rival/hurt_heavy/bot_crimson_rival_hurt_heavy_003.png"
+        },
+        {
+          "file": "bot_crimson_rival_hurt_heavy_004.png",
+          "animation": "hurt_heavy",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/hurt_heavy/bot_crimson_rival_hurt_heavy_004.png"
         },
         {
           "file": "bot_crimson_rival_idle_000.png",
@@ -324,8 +329,8 @@
     },
     "player_ink_fighter": {
       "source_archive": "assets/characters/originals/player_ink_fighter",
-      "frame_count": 62,
-      "expected_frame_count": 62,
+      "frame_count": 63,
+      "expected_frame_count": 63,
       "frames": [
         {
           "file": "player_ink_fighter_block_000.png",
@@ -456,6 +461,11 @@
           "file": "player_ink_fighter_hurt_heavy_003.png",
           "animation": "hurt_heavy",
           "runtime": "assets/characters/runtime/player_ink_fighter/hurt_heavy/player_ink_fighter_hurt_heavy_003.png"
+        },
+        {
+          "file": "player_ink_fighter_hurt_heavy_004.png",
+          "animation": "hurt_heavy",
+          "runtime": "assets/characters/runtime/player_ink_fighter/hurt_heavy/player_ink_fighter_hurt_heavy_004.png"
         },
         {
           "file": "player_ink_fighter_idle_000.png",

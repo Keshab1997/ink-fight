@@ -58,7 +58,9 @@ Other cycles: **block** (raise 90 ms → loop frames 1–2 at 140 ms while the
 guard is held → release 120 ms) · **hurt** (5 frames: recoil 000 at 0,
 in-between 001 at 40, stagger 002 at 70, in-between 003 at 115, recovered 004
 at 150 = [40, 30, 45, 35, 70] — the in-betweens only split the old 0/70/150
-beats — then hold the last frame until hitstun ends — 220 ms light, 420 ms heavy) ·
+beats — then hold the last frame until hitstun ends — 220 ms light, 420 ms heavy;
+**hurt_heavy** is 5 frames, [90, 45, 45, 120, 120]: impact 000 at 0, recoil 001
+at 90, in-between 002 at 135, skid 003 at 180, recovered 004 at 300) ·
 **jump** (takeoff 100, rise 150, apex 150, fall 160, landing 140 = 700 ms =
 `jumpMs`) · **walk** (see §6; 8 frames since the in-betweens) · **idle** (one
 560 ms breath — the old 4 × 140 ms — spread evenly over however many frames are
