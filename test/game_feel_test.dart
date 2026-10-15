@@ -417,7 +417,11 @@ void main() {
     void walkIntoRange(MatchController match) {
       final reach = match.rules.lightAttack.reach;
       match.setMoveAxis(FighterId.player, 1);
-      for (var i = 0; i < 200 && (match.rival.x - match.player.x) > reach * .9; i++) {
+      for (
+        var i = 0;
+        i < 200 && (match.rival.x - match.player.x) > reach * .9;
+        i++
+      ) {
         match.tick(1 / 60);
       }
       match.setMoveAxis(FighterId.player, 0);

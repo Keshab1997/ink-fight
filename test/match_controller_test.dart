@@ -443,7 +443,11 @@ void main() {
       c.distanceBetween(FighterId.player, FighterId.rival),
       reason: 'distance is symmetric',
     );
-    expect(c.isInReach(FighterId.player), isFalse, reason: 'idle reaches nothing');
+    expect(
+      c.isInReach(FighterId.player),
+      isFalse,
+      reason: 'idle reaches nothing',
+    );
 
     // At the opening gap the swing is mid-window and still geometry says no,
     // and the loop agrees: no damage.
@@ -705,7 +709,11 @@ void main() {
       FighterAction.hitstun,
       FighterAction.blockstun,
     ]) {
-      expect(c.wouldConnect(FighterId.player, action), isFalse, reason: '$action');
+      expect(
+        c.wouldConnect(FighterId.player, action),
+        isFalse,
+        reason: '$action',
+      );
     }
   });
 
