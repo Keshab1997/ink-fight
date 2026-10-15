@@ -127,13 +127,28 @@ flickered 44 px backwards for one frame.
 - `knockdown_003`: one knee and one hand preparing to rise.
 - `knockdown_004`: standing recovery pose, matching the ready stance.
 
-### Victory — 5 frames
+### Victory — 7 frames (5 keyframes + 2 in-betweens)
 
-- `victory_000`: upright celebration start, fists raised, happy determined face.
-- `victory_001`: full celebratory pose with scarf or ink ribbon moving upward.
-- `victory_002`: strongest victory silhouette, one foot lifted or a confident lean.
-- `victory_003`: settling pose with a small ink flourish.
-- `victory_004`: clean result pose, feet stable and face clearly visible.
+The in-betweens fill each fighter's two largest steps, so the numbering differs
+between the two:
+
+| Keyframe | player | rival |
+|---|---|---|
+| upright celebration start, fists raised, happy determined face | `000` | `000` |
+| full celebratory pose with scarf or ink ribbon moving upward | `001` | `002` |
+| strongest victory silhouette, one foot lifted or a confident lean | `002` | `003` |
+| settling pose with a small ink flourish | `003` | `005` |
+| clean result pose, feet stable and face clearly visible | `005` | `006` |
+
+- Player `victory_004` (in-between 003 → 005): the raised glove coming down
+  beside his head at ear height, the other glove dropped to his belt, the stance
+  narrowing.
+- Player `victory_006` (in-between on the loop seam, 005 → 000): both gloves
+  rising to his chest out of the result pose, on the way back into the guard.
+- Rival `victory_001` (in-between 000 → 002): both gloves rising past the chest
+  from the hips on the way up into the V.
+- Rival `victory_004` (in-between 003 → 005): the lifted foot touching back down
+  while one glove lowers to head height and the other stays raised.
 
 ### Defeat — 5 frames
 
@@ -248,6 +263,7 @@ step / mean silhouette change, before → after):
 | heavy kick | 177 px / 0.44 → 216 px / 0.45 ² | 155 px / 0.36 → 155 px / 0.32 ³ |
 | hurt heavy | 219 px / 0.59 → 181 px / 0.55 | 178 px / 0.50 → 96 px / 0.43 ⁵ |
 | jump ⁶ | 102 px / 0.51 → 102 px / 0.44 | 40 px / 0.40 → 34 px / 0.38 |
+| victory ⁷ | 125 px / 0.46 → 79 px / 0.39 | 138 px / 0.46 → 104 px / 0.46 |
 | block raise ⁴ | 33 px / 0.23 → 23 px / 0.18 | 0 px / 0.08 → 0 px / 0.05 |
 | block release ⁴ | 18 px / 0.26 → 27 px / 0.21 | 42 px / 0.27 → 29 px / 0.22 |
 
@@ -278,6 +294,14 @@ stands much closer to the airborne tuck (0.27) than to the crouch (0.60), with
 its head on the tuck's (499 against 498 px). The rival's push-off head sits
 18 px past its neighbours', 3 px over the tolerance, and is accepted with that
 note; its largest head step still shrinks, from 40 to 34 px.
+
+⁷ Victory loops in place like idle, so the head is the anchor; the loop seam
+counts as a step. The largest silhouette step drops for both fighters (player
+0.55 → 0.45, rival 0.61 → 0.55). The rival's mean holds at 0.46 because each
+in-between splits one big step into two medium ones. His 004 sets the lifted
+foot down about 160 px left of where 005 plants it: its raised arms widen the
+bounding box, and centring slides the body. The standing foot's path still
+improves (500 → 566 → 732 px, largest step 232 → 166 px).
 
 Rejected, with the measurement: the player's idle 002 → 003 in-between, four
 attempts. Twice the scarf came out longer than in frame 003 (the largest head
@@ -321,6 +345,28 @@ took retries.
 
 Both landed once the prompt spelled out the geometry. For the rival it also took
 a gentler pose, close to the crouch, with the three-quarter facing written out.
+
+Victory: both rival in-betweens passed first time; the player's two took a
+retry each.
+- His 003 → 005 frame first swapped the arms: the raised glove dropped to the
+  hip while the other rose to the chin. That is a gesture neither neighbour has,
+  and the frame sat 0.46 and 0.49 from neighbours only 0.45 apart.
+- His seam frame first came back as 000's guard on the result pose's legs, still
+  0.54 from 005 against the 0.55 it was meant to split.
+- Both landed once the prompt kept each glove on its own side of the picture
+  and gave its height ("at ear height, still on the left side of his head";
+  "at stomach height, well below the chest").
+
+Defeat, one round in, is not delivered yet. The rival's 003 → 004 in-between
+passed and waits for its partners. The rest failed:
+- The player's stagger → stand frame added a glove raised to the chin and drew
+  one shoe grey.
+- His kneel → slump frame barely left the kneel (0.17, against 0.38 to the next
+  frame) and turned the face sad.
+- The rival's kneel → rise frame drew a ground line, flipped the scarf to the
+  other side and raised a guard glove.
+
+Pin the gloves, the shoes' fill and the expression explicitly for these.
 
 **Haze.** A generation can leave a faint grey ground smudge under a lifted foot
 (the rival's `walk_002` did). `tool/process_character_assets.py` now clears any

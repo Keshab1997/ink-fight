@@ -6,8 +6,8 @@
   "characters": {
     "bot_crimson_rival": {
       "source_archive": "assets/characters/originals/bot_crimson_rival",
-      "frame_count": 68,
-      "expected_frame_count": 68,
+      "frame_count": 70,
+      "expected_frame_count": 70,
       "frames": [
         {
           "file": "bot_crimson_rival_block_000.png",
@@ -310,6 +310,16 @@
           "runtime": "assets/characters/runtime/bot_crimson_rival/victory/bot_crimson_rival_victory_004.png"
         },
         {
+          "file": "bot_crimson_rival_victory_005.png",
+          "animation": "victory",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/victory/bot_crimson_rival_victory_005.png"
+        },
+        {
+          "file": "bot_crimson_rival_victory_006.png",
+          "animation": "victory",
+          "runtime": "assets/characters/runtime/bot_crimson_rival/victory/bot_crimson_rival_victory_006.png"
+        },
+        {
           "file": "bot_crimson_rival_walk_000.png",
           "animation": "walk",
           "runtime": "assets/characters/runtime/bot_crimson_rival/walk/bot_crimson_rival_walk_000.png"
@@ -354,8 +364,8 @@
     },
     "player_ink_fighter": {
       "source_archive": "assets/characters/originals/player_ink_fighter",
-      "frame_count": 68,
-      "expected_frame_count": 68,
+      "frame_count": 70,
+      "expected_frame_count": 70,
       "frames": [
         {
           "file": "player_ink_fighter_block_000.png",
@@ -656,6 +666,16 @@
           "file": "player_ink_fighter_victory_004.png",
           "animation": "victory",
           "runtime": "assets/characters/runtime/player_ink_fighter/victory/player_ink_fighter_victory_004.png"
+        },
+        {
+          "file": "player_ink_fighter_victory_005.png",
+          "animation": "victory",
+          "runtime": "assets/characters/runtime/player_ink_fighter/victory/player_ink_fighter_victory_005.png"
+        },
+        {
+          "file": "player_ink_fighter_victory_006.png",
+          "animation": "victory",
+          "runtime": "assets/characters/runtime/player_ink_fighter/victory/player_ink_fighter_victory_006.png"
         },
         {
           "file": "player_ink_fighter_walk_000.png",

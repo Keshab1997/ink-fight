@@ -495,15 +495,18 @@ void main() {
         expect(loser.animation!.frames, hasLength(5));
         expect(loser.animation!.frames.first.stepTime, .09);
         expect(loser.animation!.loop, isFalse);
-        // ...and the winner loops its victory.
+        // ...and the winner loops its victory: five keyframes plus two
+        // in-betweens (prompt pack §5), still one 600 ms celebration.
         final winner = rivalOf(game);
+        expect(winner.animation!.frames, hasLength(7));
         expect(winner.animation!.loop, isTrue);
+        expect(totalMsOf(winner), closeTo(600, 1e-6));
 
         // Once 600 ms of animation time has run, the defeat cycle takes over
-        // and holds the loser on the ground.
+        // and holds the loser on the ground — 600 ms however many frames land.
         tick(game, 45);
         expect(loser.animation!.frames, hasLength(5));
-        expect(loser.animation!.frames.first.stepTime, .12);
+        expect(totalMsOf(loser), closeTo(600, 1e-6));
         expect(loser.animation!.loop, isFalse);
       },
     );

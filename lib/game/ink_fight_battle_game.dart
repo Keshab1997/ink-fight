@@ -446,19 +446,6 @@ class InkFightBattleGame extends FlameGame {
       return sprites;
     }
 
-    /// A cycle whose frames all hold the same time.
-    Future<SpriteAnimation> cycle(
-      String action, {
-      required double stepTime,
-      bool loop = false,
-    }) async {
-      return SpriteAnimation.spriteList(
-        await loadCycle(action),
-        stepTime: stepTime,
-        loop: loop,
-      );
-    }
-
     /// A cycle that spreads [totalMs] evenly over however many frames the art
     /// delivers: an in-between frame makes the motion smoother, never slower.
     Future<SpriteAnimation> evenCycle(
@@ -534,8 +521,10 @@ class InkFightBattleGame extends FlameGame {
       hurt: await recipe('hurt', _kHurtStepsMs),
       hurtHeavy: await recipe('hurt_heavy', _kHurtHeavyStepsMs),
       knockdown: await recipe('knockdown', _kKnockdownStepsMs),
-      victory: await cycle('victory', stepTime: .12, loop: true),
-      defeat: await cycle('defeat', stepTime: .12),
+      // The result poses keep the 600 ms they had as 5 × 120 ms: one
+      // celebration loop, one fall to the final pose (GAME_FEEL §1).
+      victory: await evenCycle('victory', totalMs: 600, loop: true),
+      defeat: await evenCycle('defeat', totalMs: 600),
       walkBaseStepTime: walk.frames.first.stepTime,
     );
   }

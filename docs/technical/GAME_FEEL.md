@@ -68,8 +68,10 @@ recovered 005 at 300) ·
 325, fall 005 at 400, landing 006 at 560. The in-betweens split the takeoff and
 the apex, and the phase starts 0 / 100 / 250 / 400 / 560 are kept) · **walk** (see §6; 8 frames since the in-betweens) · **idle** (one
 560 ms breath — the old 4 × 140 ms — spread evenly over however many frames are
-delivered: the rival's 6 hold ≈93 ms each, the player's 5 hold 112 ms until his
-last in-between lands).
+delivered: 6 for both fighters, ≈93 ms each) · **victory** (one 600 ms loop —
+the old 5 × 120 ms — spread evenly the same way: 7 frames, ≈86 ms each) ·
+**defeat** (one 600 ms fall to the final pose, also spread evenly: 5 frames at
+120 ms until its in-betweens land).
 
 Rule of thumb for any future move: the contact frame sits inside the active
 window, and `sum(frame holds) == totalMs` from the rules table.
