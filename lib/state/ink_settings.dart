@@ -13,7 +13,7 @@ import 'package:flutter/foundation.dart';
 /// global mutable singleton to reset between tests and no inherited-widget
 /// ceremony for the handful of values that exist today.
 class InkSettings extends ChangeNotifier {
-  InkSettings({bool soundOn = true}) : _soundOn = soundOn;
+  InkSettings({this._soundOn = true});
 
   bool _soundOn;
 
