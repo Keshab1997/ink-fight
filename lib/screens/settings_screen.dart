@@ -233,59 +233,25 @@ class _ToggleRow extends StatelessWidget {
 }
 
 class _StaticRow extends StatelessWidget {
-  const _StaticRow({required this.label, required this.caption, this.tag});
+  const _StaticRow({required this.label, required this.caption});
 
   final String label;
   final String caption;
 
-  /// Marks a row that is not a control yet, so it never looks pressable.
-  final String? tag;
-
   @override
   Widget build(BuildContext context) {
-    return _RowShell(
-      label: label,
-      caption: caption,
-      muted: tag != null,
-      trailing: tag == null
-          ? null
-          : DecoratedBox(
-              decoration: BoxDecoration(
-                color: InkColors.paperDeep,
-                borderRadius: BorderRadius.circular(99),
-                border: Border.all(color: InkColors.line),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                child: Text(
-                  tag!,
-                  style: const TextStyle(
-                    color: InkColors.muted,
-                    fontSize: 8,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1,
-                  ),
-                ),
-              ),
-            ),
-    );
+    return _RowShell(label: label, caption: caption);
   }
 }
 
 /// The one shape both row kinds share: label on the left, something on the
 /// right, caption underneath.
 class _RowShell extends StatelessWidget {
-  const _RowShell({
-    required this.label,
-    required this.caption,
-    this.trailing,
-    this.muted = false,
-  });
+  const _RowShell({required this.label, required this.caption, this.trailing});
 
   final String label;
   final String caption;
   final Widget? trailing;
-  final bool muted;
 
   @override
   Widget build(BuildContext context) {
@@ -306,8 +272,8 @@ class _RowShell extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: TextStyle(
-                      color: muted ? InkColors.muted : InkColors.ink,
+                    style: const TextStyle(
+                      color: InkColors.ink,
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 1,
