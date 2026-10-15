@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -174,6 +175,15 @@ class InkFightBattleGame extends FlameGame {
   /// Bumped whenever a value the HUD shows actually changes, so the screen
   /// can listen instead of rebuilding every frame.
   final ValueNotifier<int> hudVersion = ValueNotifier(0);
+
+  /// Haptic cues on connects, on by default. The seam the settings screen
+  /// will flip once audio and haptics become independent settings — the
+  /// arena reads it, the screen will own it.
+  bool hapticsEnabled = true;
+
+  /// Diagnostic hitbox overlay, off by default: pushboxes, attack reaches
+  /// and the live active window, drawn from the rules (ROADMAP Phase 0).
+  bool debugOverlay = false;
 
   final MatchController _match = MatchController();
   final BotController _bot;
@@ -593,11 +603,31 @@ class InkFightBattleGame extends FlameGame {
     hudVersion.value++;
   }
 
+  /// Fires the one haptic cue [event] carries, if any: light on a light
+  /// connect or a block, medium on a heavy connect, heavy on the KO — never
+  /// on a whiff, never when [hapticsEnabled] is off. Called exactly where
+  /// the event is consumed, which only runs on sim time, so a freeze never
+  /// buzzes; and each event drains once, so a cue fires once per event,
+  /// never per frame.
+  void _fireHaptic(HitEvent event) {
+    if (!hapticsEnabled || event.kind == HitKind.whiff) {
+      return;
+    }
+    if (event.ko) {
+      unawaited(HapticFeedback.heavyImpact());
+    } else if (event.kind == HitKind.blocked || !event.heavy) {
+      unawaited(HapticFeedback.lightImpact());
+    } else {
+      unawaited(HapticFeedback.mediumImpact());
+    }
+  }
+
   /// Turns every swing the controller resolved since the last frame into
   /// feel: the stop, the ink, the shake — and the KO cinematic when the blow
   /// ended the match.
   void _consumeHitEvents() {
     for (final event in _match.drainHitEvents()) {
+      _fireHaptic(event);
       switch (event.kind) {
         case HitKind.whiff:
           // Air gets no stop and no shake — but the miss still reads: an
@@ -1035,6 +1065,7 @@ class InkFightBattleGame extends FlameGame {
     // ±15% height budget around the contact point and far below the HUD
     // (GDD §7: nothing hides the fighters or the health state).
     _renderInk(canvas);
+    _renderDebugOverlay(canvas);
     canvas.restore();
 
     _renderCountdown(canvas);
@@ -1178,6 +1209,70 @@ class InkFightBattleGame extends FlameGame {
     }
   }
 
+  /// Diagnostic hitbox overlay (ROADMAP Phase 0): pushboxes and attack
+  /// reaches for both fighters, with the live active window highlighted.
+  /// Off unless [debugOverlay] is set — purely a drawing pass over the pure
+  /// [debugHitboxGeometry], in thin high-contrast diagnostic ink.
+  void _renderDebugOverlay(ui.Canvas canvas) {
+    if (!debugOverlay || !_loaded) {
+      return;
+    }
+    final rules = _match.rules;
+    final pxPerUnit = size.x / rules.arenaWidth;
+    final floor = size.y * .80;
+    final height = _fighterHeight();
+    final boxes = debugHitboxGeometry(rules, [
+      _match.stateOf(FighterId.player),
+      _match.stateOf(FighterId.rival),
+    ]);
+
+    final push = ui.Paint()
+      ..color = InkColors.ink.withValues(alpha: .75)
+      ..style = ui.PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    for (final box in boxes) {
+      final cx = box.x * pxPerUnit;
+      final half = box.pushHalfWidth * pxPerUnit;
+      canvas.drawRect(
+        ui.Rect.fromLTRB(cx - half, floor - height, cx + half, floor),
+        push,
+      );
+      if (box.reach <= 0) {
+        continue;
+      }
+      // Reach: the span ahead of the fighter at chest height; crimson and
+      // filled while the window is open.
+      final tip = (box.x + box.facing * box.reach) * pxPerUnit;
+      final chest = floor - height * .43;
+      if (box.isActive) {
+        final fill = ui.Paint()
+          ..color = _kCrimsonFleck.withValues(alpha: .16);
+        canvas.drawRect(
+          ui.Rect.fromLTRB(
+            math.min(cx, tip),
+            floor - height,
+            math.max(cx, tip),
+            floor,
+          ),
+          fill,
+        );
+      }
+      final edge = ui.Paint()
+        ..color = (box.isActive ? _kCrimsonFleck : InkColors.ink).withValues(
+          alpha: box.isActive ? .9 : .5,
+        )
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = box.isActive ? 3 : 2
+        ..strokeCap = ui.StrokeCap.round;
+      canvas.drawLine(ui.Offset(cx, chest), ui.Offset(tip, chest), edge);
+      canvas.drawLine(
+        ui.Offset(tip, chest - 6),
+        ui.Offset(tip, chest + 6),
+        edge,
+      );
+    }
+  }
+
   /// §5 countdown: four 500 ms beats — 3 · 2 · 1 · FIGHT! — popping at each
   /// beat, in the doodle language: a soft ink bleed under the solid stroke.
   void _renderCountdown(ui.Canvas canvas) {
@@ -1228,6 +1323,53 @@ class InkFightBattleGame extends FlameGame {
       )..layout();
     });
   }
+}
+
+/// One fighter's diagnostic boxes for the debug overlay, in arena units.
+/// Pure data: [debugHitboxGeometry] builds it from states + rules with no
+/// canvas involved, so tests assert the numbers directly.
+class DebugFighterBoxes {
+  const DebugFighterBoxes({
+    required this.id,
+    required this.x,
+    required this.facing,
+    required this.pushHalfWidth,
+    required this.reach,
+    required this.isActive,
+  });
+
+  final FighterId id;
+  final double x;
+  final double facing;
+
+  /// Half of [MatchRules.minFighterDistance]: the pushbox spans x ± this.
+  final double pushHalfWidth;
+
+  /// The current attack's reach, or 0 when the action carries no hitbox.
+  final double reach;
+
+  /// True while the attack's active window is open.
+  final bool isActive;
+}
+
+/// Diagnostic hitbox geometry for [states] on [rules]: pushboxes, attack
+/// reaches and the live active window (ROADMAP Phase 0). Pure — the overlay
+/// paints what this returns, and tests pin the numbers without a canvas.
+List<DebugFighterBoxes> debugHitboxGeometry(
+  MatchRules rules,
+  List<FighterState> states,
+) {
+  return states.map((state) {
+    final frame = rules.reachOf(state.action);
+    return DebugFighterBoxes(
+      id: state.id,
+      x: state.x,
+      facing: state.facing,
+      pushHalfWidth: rules.minFighterDistance / 2,
+      reach: frame?.reach ?? 0,
+      isActive: frame != null && frame.isActiveAt(state.actionElapsedMs),
+    );
+  }).toList();
 }
 
 /// The animation cycles one fighter view needs, built to the recipes in

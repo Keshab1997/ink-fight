@@ -1,4 +1,5 @@
 import 'package:flame/components.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:inkfight/game/bot/bot_strategy.dart';
@@ -645,6 +646,151 @@ void main() {
         sawPuff = game.liveEffectCount > 0;
       }
       expect(sawPuff, isTrue, reason: 'a footstep puff should show');
+    });
+  });
+
+  group('debug hitbox geometry', () {
+    const rules = MatchRules.standard;
+
+    DebugFighterBoxes boxesFor(FighterAction action, int elapsedMs) {
+      return debugHitboxGeometry(rules, [
+        FighterState(
+          id: FighterId.player,
+          x: 110,
+          health: rules.health,
+          facing: 1,
+          action: action,
+          actionElapsedMs: elapsedMs,
+        ),
+      ]).single;
+    }
+
+    test('the overlay is off by default', () {
+      expect(InkFightBattleGame().debugOverlay, isFalse);
+    });
+
+    test('reach matches the rules frame for both attacks', () {
+      expect(
+        boxesFor(FighterAction.lightPunch, 0).reach,
+        rules.lightAttack.reach,
+      );
+      expect(
+        boxesFor(FighterAction.heavyKick, 0).reach,
+        rules.heavyAttack.reach,
+      );
+      // No hitbox outside an attack.
+      expect(boxesFor(FighterAction.idle, 0).reach, 0);
+      expect(boxesFor(FighterAction.walk, 0).reach, 0);
+      expect(boxesFor(FighterAction.block, 0).reach, 0);
+    });
+
+    test('the active flag flips exactly on the window edges', () {
+      final light = rules.lightAttack;
+      bool activeAt(int elapsedMs) =>
+          boxesFor(FighterAction.lightPunch, elapsedMs).isActive;
+      expect(activeAt(light.startupMs - 1), isFalse);
+      expect(activeAt(light.startupMs), isTrue);
+      expect(activeAt(light.startupMs + light.activeMs - 1), isTrue);
+      expect(activeAt(light.startupMs + light.activeMs), isFalse);
+
+      final heavy = rules.heavyAttack;
+      expect(
+        boxesFor(FighterAction.heavyKick, heavy.startupMs).isActive,
+        isTrue,
+      );
+      expect(
+        boxesFor(
+          FighterAction.heavyKick,
+          heavy.startupMs + heavy.activeMs,
+        ).isActive,
+        isFalse,
+      );
+    });
+
+    test('the pushbox spans exactly minFighterDistance', () {
+      final boxes = boxesFor(FighterAction.idle, 0);
+      expect(boxes.pushHalfWidth * 2, rules.minFighterDistance);
+      expect(boxes.x, 110);
+      expect(boxes.facing, 1);
+    });
+  });
+
+  group('haptics', () {
+    /// Records platform haptic calls while the test drives the arena.
+    List<MethodCall> recordHaptics() {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            calls.add(call);
+            return null;
+          });
+      return calls;
+    }
+
+    /// Walks the player in and jabs until one lands (the §2 pattern).
+    void landOneJab(InkFightBattleGame game) {
+      final jabReach = game.match.rules.lightAttack.reach;
+      game.setPlayerMoving(true);
+      var landed = false;
+      for (var i = 0; i < 400 && !landed; i++) {
+        final player = game.match.stateOf(FighterId.player);
+        final gap = (game.match.stateOf(FighterId.rival).x - player.x).abs();
+        if (gap > jabReach * .9) {
+          game.setPlayerMoving(true);
+        } else {
+          game.setPlayerMoving(false);
+          if (player.canAct) {
+            game.sendPlayerAction(InputAction.lightPunch);
+          }
+        }
+        tick(game, 1);
+        landed = game.match.stateOf(FighterId.rival).health < 100;
+      }
+      expect(landed, isTrue, reason: 'the light punch should connect');
+    }
+
+    test('haptics are enabled by default', () {
+      expect(InkFightBattleGame().hapticsEnabled, isTrue);
+    });
+
+    test('a connect produces exactly one haptic call', () async {
+      final haptics = recordHaptics();
+      final game = await loadedGame();
+      pastCountdown(game);
+
+      landOneJab(game);
+      expect(haptics, hasLength(1));
+      expect(haptics.single.methodName, 'HapticFeedback.vibrate');
+      expect(
+        haptics.single.arguments,
+        'HapticFeedbackType.lightImpact',
+      );
+    });
+
+    test('a whiff stays silent', () async {
+      final haptics = recordHaptics();
+      final game = await loadedGame();
+      pastCountdown(game);
+
+      // Opening gap is 80 units, past every reach: the jab closes on air.
+      game.sendPlayerAction(InputAction.lightPunch);
+      var guard = 0;
+      while (game.whiffFxCount == 0 && guard++ < 40) {
+        tick(game, 1);
+      }
+      expect(game.whiffFxCount, greaterThan(0));
+      tick(game, 20); // through recovery: still nothing to feel
+      expect(haptics, isEmpty);
+    });
+
+    test('hapticsEnabled = false silences every cue', () async {
+      final haptics = recordHaptics();
+      final game = await loadedGame();
+      game.hapticsEnabled = false;
+      pastCountdown(game);
+
+      landOneJab(game);
+      expect(haptics, isEmpty);
     });
   });
 }
