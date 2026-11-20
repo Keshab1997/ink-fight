@@ -43,3 +43,4 @@ secrets/
 
 # Python bytecode from the repo's own tools.
 __pycache__/
+.agent-pack-backups/
